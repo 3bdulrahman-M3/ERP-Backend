@@ -1,105 +1,116 @@
 # Backend ERP System
 
-نظام Backend ERP مبني بـ Node.js و PostgreSQL
+Backend ERP System built with Node.js and PostgreSQL
 
-## المتطلبات
+## Requirements
 
-- Node.js (الإصدار 14 أو أحدث)
-- PostgreSQL (الإصدار 12 أو أحدث)
+- Node.js (version 14 or higher)
+- PostgreSQL (version 12 or higher)
 
-## التثبيت
+## Installation
 
-1. تثبيت المكتبات المطلوبة:
+1. Install required packages:
 ```bash
 npm install
 ```
 
-2. إنشاء ملف `.env` وإدخال بيانات قاعدة البيانات الخاصة بك:
+2. Create `.env` file and enter your database credentials:
 ```
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=erp_db
+DB_NAME=ERP
 DB_USER=postgres
 DB_PASSWORD=your_password
-PORT=3000
+PORT=3001
 JWT_SECRET=your-secret-key-change-in-production
 JWT_EXPIRES_IN=7d
 RUN_SEEDER=true
 ```
 
-3. إنشاء قاعدة البيانات في PostgreSQL:
+3. Create the database in PostgreSQL:
 ```sql
-CREATE DATABASE erp_db;
+CREATE DATABASE "ERP";
 ```
 
-4. **تشغيل Migrations لإنشاء الجداول:**
+4. **Run Migrations to create tables:**
 ```bash
 npm run migrate
 ```
 
-> **ملاحظة مهمة:** يجب تشغيل Migrations قبل بدء السيرفر لأول مرة.
+> **Important Note:** You must run Migrations before starting the server for the first time.
 
-## التشغيل
+## Running
 
-### وضع التطوير (مع إعادة التشغيل التلقائي):
+### Development mode (with auto-restart):
 ```bash
 npm run dev
 ```
 
-### وضع الإنتاج:
+### Production mode:
 ```bash
 npm start
 ```
 
 ## Migrations
 
-### تشغيل Migrations:
+### Run Migrations:
 ```bash
 npm run migrate
 ```
-يقوم بإنشاء جميع الجداول المطلوبة في قاعدة البيانات.
+Creates all required tables in the database.
 
-### إلغاء آخر Migration:
+### Undo last Migration:
 ```bash
 npm run migrate:undo
 ```
-يقوم بإلغاء آخر migration تم تنفيذه.
+Undoes the last executed migration.
 
 ## API Endpoints
 
-- `GET /` - الصفحة الرئيسية
-- `GET /api/health` - التحقق من حالة قاعدة البيانات
-- `POST /api/auth/login` - تسجيل الدخول
+- `GET /` - Home page
+- `GET /api/health` - Check database connection status
+- `POST /api/auth/login` - Login
   - Body: `{ "email": "user@example.com", "password": "password123" }`
-  - Response: `{ "success": true, "data": { "token": "...", "user": {...} } }`
+  - Response: `{ "success": true, "data": { "accessToken": "...", "refreshToken": "...", "user": {...} } }`
+- `POST /api/auth/refresh-token` - Refresh access token
+  - Body: `{ "refreshToken": "..." }`
+  - Response: `{ "success": true, "data": { "accessToken": "...", "user": {...} } }`
+- `POST /api/auth/logout` - Logout
+  - Body: `{ "refreshToken": "..." }`
+  - Response: `{ "success": true, "message": "Logout successful" }`
 
-## البنية
+## Authentication
+
+- **Access Token**: Expires in 1 day
+- **Refresh Token**: Expires in 7 days
+- **Roles**: `admin`, `student`
+
+## Project Structure
 
 ```
 Backend-ERP/
-├── app.js                  # ملف السيرفر الرئيسي
+├── app.js                  # Main server file
 ├── config/
-│   └── database.js         # إعدادات قاعدة البيانات (Sequelize)
+│   └── database.js         # Database configuration (Sequelize)
 ├── controllers/
-│   └── authController.js   # Controller للمصادقة
+│   └── authController.js   # Authentication controller
 ├── services/
-│   └── authService.js      # Service للمصادقة
+│   └── authService.js      # Authentication service
 ├── models/
-│   ├── User.js             # موديل User
-│   └── index.js            # تصدير الموديلات
+│   ├── User.js             # User model
+│   └── index.js            # Models export
 ├── routes/
-│   └── authRoutes.js       # Routes للمصادقة
+│   └── authRoutes.js       # Authentication routes
 ├── middlewares/
-│   ├── authMiddleware.js   # Middleware للتحقق من JWT
-│   └── responseHandler.js  # Middleware لتنسيق الردود
+│   ├── authMiddleware.js   # JWT verification middleware
+│   └── responseHandler.js  # Response formatting middleware
 ├── migrations/
-│   ├── 20240101000000-create-users.js  # Migration لجدول users
-│   ├── runMigrations.js                # سكريبت لتشغيل Migrations
-│   └── undoLastMigration.js            # سكريبت لإلغاء آخر Migration
+│   ├── 20240101000000-create-users.js  # Migration for users table
+│   ├── runMigrations.js                # Script to run migrations
+│   └── undoLastMigration.js            # Script to undo last migration
 ├── seeders/
-│   └── seedAdmin.js        # Seeder لحساب Admin افتراضي
-├── .env                    # ملف البيئة (يجب إنشاؤه)
-├── package.json            # ملف المشروع
-└── README.md               # هذا الملف
+│   └── seedAdmin.js        # Seeder for default Admin account
+├── .env                    # Environment file (must be created)
+├── package.json            # Project file
+└── README.md               # This file
 ```
-

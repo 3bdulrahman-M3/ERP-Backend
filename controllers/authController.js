@@ -1,0 +1,86 @@
+const authService = require('../services/authService');
+
+const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email and password',
+        hint: 'Make sure to send a POST request with Content-Type: application/json and body: { "email": "your@email.com", "password": "yourpassword" }'
+      });
+    }
+
+    const result = await authService.login(email, password);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      data: result
+    });
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide refresh token'
+      });
+    }
+
+    const result = await authService.refreshAccessToken(refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: result
+    });
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const logout = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide refresh token'
+      });
+    }
+
+    await authService.logout(refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+module.exports = {
+  login,
+  refreshToken,
+  logout
+};
+
