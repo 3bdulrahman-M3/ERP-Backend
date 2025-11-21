@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { sequelize } = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 
 const app = express();
@@ -49,6 +50,7 @@ app.get('/api/health', async (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/students', studentRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -84,17 +86,47 @@ const startServer = async () => {
       }
     }
     
+    // Try to free port before starting
+    const { killPort } = require('./utils/portHandler');
+    const portResult = await killPort(PORT);
+    if (portResult.success && portResult.pids && portResult.pids.length > 0) {
+      console.log(`✅ Freed port ${PORT} (killed ${portResult.pids.length} process(es))`);
+      // Wait a moment for port to be fully released
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📍 URL: http://localhost:${PORT}`);
     });
 
     // Handle server errors
-    server.on('error', (error) => {
+    server.on('error', async (error) => {
       if (error.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${PORT} is already in use. Please stop the process using this port or change the PORT in .env file`);
-        console.error(`💡 To find and kill the process: netstat -ano | findstr :${PORT}`);
-        process.exit(1);
+        console.log(`⚠️  Port ${PORT} is still in use. Attempting to free it...`);
+        const result = await killPort(PORT);
+        
+        if (result.success) {
+          console.log(`✅ ${result.message}`);
+          console.log('🔄 Retrying to start server...');
+          // Wait a moment then retry
+          setTimeout(() => {
+            const retryServer = app.listen(PORT, () => {
+              console.log(`🚀 Server running on port ${PORT}`);
+              console.log(`📍 URL: http://localhost:${PORT}`);
+            });
+            
+            retryServer.on('error', (err) => {
+              console.error(`❌ Port ${PORT} is still in use after retry.`);
+              console.error(`💡 Please manually kill the process: netstat -ano | findstr :${PORT}`);
+              process.exit(1);
+            });
+          }, 1000);
+        } else {
+          console.error(`❌ Could not free port ${PORT}`);
+          console.error(`💡 Please manually kill the process: netstat -ano | findstr :${PORT}`);
+          process.exit(1);
+        }
       } else {
         console.error('❌ Server error:', error);
         process.exit(1);
