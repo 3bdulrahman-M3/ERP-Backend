@@ -23,11 +23,22 @@ const Student = sequelize.define('Student', {
       notEmpty: true
     }
   },
-  college: {
-    type: DataTypes.STRING,
-    allowNull: false,
+  collegeId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'colleges',
+      key: 'id'
+    },
+    onDelete: 'SET NULL'
+  },
+  year: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
     validate: {
-      notEmpty: true
+      min: 1,
+      max: 6,
+      isInt: true
     }
   },
   age: {

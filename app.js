@@ -4,6 +4,8 @@ const cors = require('cors');
 const { sequelize } = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const roomRoutes = require('./routes/roomRoutes');
+const collegeRoutes = require('./routes/collegeRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 
 const app = express();
@@ -51,6 +53,8 @@ app.get('/api/health', async (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/colleges', collegeRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

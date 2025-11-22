@@ -11,6 +11,7 @@ router.use(roleMiddleware('admin'));
 // CRUD operations
 router.post('/', studentController.createStudent);
 router.get('/', studentController.getAllStudents);
+router.get('/filter', studentController.getStudentsByCollegeAndYear);
 router.get('/:id', studentController.getStudentById);
 router.put('/:id', studentController.updateStudent);
 router.delete('/:id', studentController.deleteStudent);

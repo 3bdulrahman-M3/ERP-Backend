@@ -3,13 +3,13 @@ const studentService = require('../services/studentService');
 // Create student
 const createStudent = async (req, res) => {
   try {
-    const { name, email, password, college, age, phoneNumber } = req.body;
+    const { name, email, password, collegeId, year, age, phoneNumber } = req.body;
 
     // Validation
-    if (!name || !email || !password || !college || !age || !phoneNumber) {
+    if (!name || !email || !password || !age || !phoneNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields: name, email, password, college, age, phoneNumber'
+        message: 'Please provide all required fields: name, email, password, age, phoneNumber'
       });
     }
 
@@ -17,7 +17,8 @@ const createStudent = async (req, res) => {
       name,
       email,
       password,
-      college,
+      collegeId,
+      year,
       age,
       phoneNumber
     });
@@ -40,8 +41,9 @@ const getAllStudents = async (req, res) => {
   try {
     const page = req.query.page || 1;
     const limit = req.query.limit || 10;
+    const excludeAssigned = req.query.excludeAssigned === 'true';
 
-    const result = await studentService.getAllStudents(page, limit);
+    const result = await studentService.getAllStudents(page, limit, excludeAssigned);
 
     res.json({
       success: true,
@@ -116,11 +118,35 @@ const deleteStudent = async (req, res) => {
   }
 };
 
+// Get students by college and/or year
+const getStudentsByCollegeAndYear = async (req, res) => {
+  try {
+    const page = req.query.page || 1;
+    const limit = req.query.limit || 10;
+    const collegeId = req.query.collegeId ? parseInt(req.query.collegeId) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+
+    const result = await studentService.getStudentsByCollegeAndYear(collegeId, year, page, limit);
+
+    res.json({
+      success: true,
+      message: 'Students retrieved successfully',
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
   updateStudent,
-  deleteStudent
+  deleteStudent,
+  getStudentsByCollegeAndYear
 };
 

@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
-const { Student, User } = require('../models');
+const { Sequelize } = require('sequelize');
+const { Student, User, RoomStudent, College } = require('../models');
 
 // Generate QR Code
 const generateQRCode = async (studentId, studentName, studentEmail) => {
@@ -20,7 +21,7 @@ const generateQRCode = async (studentId, studentName, studentEmail) => {
 
 // Create student and user
 const createStudent = async (studentData) => {
-  const { name, email, password, college, age, phoneNumber } = studentData;
+  const { name, email, password, collegeId, year, age, phoneNumber } = studentData;
 
   // Check if email already exists
   const existingStudent = await Student.findOne({ where: { email } });
@@ -49,15 +50,21 @@ const createStudent = async (studentData) => {
   const student = await Student.create({
     name,
     email,
-    college,
+    collegeId: collegeId || null,
+    year: year || null,
     age,
     phoneNumber,
     qrCode,
     userId: user.id
   });
 
-  // Reload with user relation
-  await student.reload({ include: [{ model: User, as: 'user' }] });
+  // Reload with user and college relations
+  await student.reload({ 
+    include: [
+      { model: User, as: 'user' },
+      { model: College, as: 'college' }
+    ] 
+  });
 
   // Remove password from user in response
   const studentResponse = student.toJSON();
@@ -69,11 +76,28 @@ const createStudent = async (studentData) => {
 };
 
 // Get all students
-const getAllStudents = async (page = 1, limit = 10) => {
+const getAllStudents = async (page = 1, limit = 10, excludeAssigned = false) => {
   const offset = (page - 1) * limit;
 
+  const whereClause = {};
+  
+  // If excludeAssigned is true, exclude students who have active room assignments
+  if (excludeAssigned) {
+    whereClause.id = {
+      [Sequelize.Op.notIn]: Sequelize.literal(`(
+        SELECT DISTINCT "studentId" 
+        FROM "room_students" 
+        WHERE "isActive" = true
+      )`)
+    };
+  }
+
   const { count, rows } = await Student.findAndCountAll({
-    include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] }],
+    where: whereClause,
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
+      { model: College, as: 'college', attributes: ['id', 'name'] }
+    ],
     attributes: { exclude: ['password'] },
     limit: parseInt(limit),
     offset: parseInt(offset),
@@ -94,7 +118,17 @@ const getAllStudents = async (page = 1, limit = 10) => {
 // Get student by ID
 const getStudentById = async (id) => {
   const student = await Student.findByPk(id, {
-    include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] }],
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
+      { model: College, as: 'college', attributes: ['id', 'name'] },
+      { 
+        model: RoomStudent, 
+        as: 'roomAssignments',
+        where: { isActive: true },
+        required: false,
+        include: [{ model: require('../models').Room, as: 'room', attributes: ['id', 'roomNumber', 'building'] }]
+      }
+    ],
     attributes: { exclude: ['password'] }
   });
 
@@ -115,7 +149,7 @@ const updateStudent = async (id, studentData) => {
     throw new Error('Student not found');
   }
 
-  const { name, email, password, college, age, phoneNumber } = studentData;
+  const { name, email, password, collegeId, year, age, phoneNumber } = studentData;
 
   // Check if email is being changed and if it's already taken
   if (email && email !== student.email) {
@@ -133,7 +167,8 @@ const updateStudent = async (id, studentData) => {
   // Update student
   if (name) student.name = name;
   if (email) student.email = email;
-  if (college) student.college = college;
+  if (collegeId !== undefined) student.collegeId = collegeId;
+  if (year !== undefined) student.year = year;
   if (age) student.age = age;
   if (phoneNumber) student.phoneNumber = phoneNumber;
 
@@ -161,7 +196,12 @@ const updateStudent = async (id, studentData) => {
     await student.user.save();
   }
 
-  await student.reload({ include: [{ model: User, as: 'user' }] });
+  await student.reload({ 
+    include: [
+      { model: User, as: 'user' },
+      { model: College, as: 'college' }
+    ] 
+  });
 
   const studentResponse = student.toJSON();
   delete studentResponse.password;
@@ -202,11 +242,50 @@ const deleteStudent = async (id) => {
 const getStudentByEmail = async (email) => {
   const student = await Student.findOne({
     where: { email },
-    include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] }],
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
+      { model: College, as: 'college', attributes: ['id', 'name'] }
+    ],
     attributes: { exclude: ['password'] }
   });
 
   return student;
+};
+
+// Get students by college and/or year
+const getStudentsByCollegeAndYear = async (collegeId, year, page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  const whereClause = {};
+
+  if (collegeId) {
+    whereClause.collegeId = collegeId;
+  }
+
+  if (year) {
+    whereClause.year = year;
+  }
+
+  const { count, rows } = await Student.findAndCountAll({
+    where: whereClause,
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
+      { model: College, as: 'college', attributes: ['id', 'name'] }
+    ],
+    attributes: { exclude: ['password'] },
+    limit: parseInt(limit),
+    offset: parseInt(offset),
+    order: [['createdAt', 'DESC']]
+  });
+
+  return {
+    students: rows,
+    pagination: {
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(count / limit)
+    }
+  };
 };
 
 module.exports = {
@@ -215,6 +294,7 @@ module.exports = {
   getStudentById,
   updateStudent,
   deleteStudent,
-  getStudentByEmail
+  getStudentByEmail,
+  getStudentsByCollegeAndYear
 };
 
