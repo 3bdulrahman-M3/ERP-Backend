@@ -42,6 +42,10 @@ const getStudentDashboard = async (studentId) => {
 
   // Get kitchen status
   const kitchenStatus = await mealService.getKitchenStatus();
+  
+  // Get all active meals for display
+  const allMeals = await mealService.getAllMeals();
+  const activeMeals = allMeals.filter(meal => meal.isActive).map(meal => meal.toJSON());
 
   // Get current date and time
   const now = new Date();
@@ -74,6 +78,7 @@ const getStudentDashboard = async (studentId) => {
     } : null,
     kitchenStatus: {
       ...kitchenStatus,
+      allMeals: activeMeals,
       currentDateTime: currentDateTime
     },
     currentDateTime: currentDateTime

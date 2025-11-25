@@ -7,12 +7,14 @@ const roleMiddleware = require('../middlewares/roleMiddleware');
 // Kitchen status is available for all authenticated users
 router.get('/status', authMiddleware, mealController.getKitchenStatus);
 
+// Get all meals is available for all authenticated users (read-only)
+router.get('/', authMiddleware, mealController.getAllMeals);
+
 // All other routes require authentication and admin role
 router.use(authMiddleware);
 router.use(roleMiddleware('admin'));
 
-// CRUD operations
-router.get('/', mealController.getAllMeals);
+// CRUD operations (admin only)
 router.get('/:id', mealController.getMealById);
 router.post('/', mealController.createMeal);
 router.put('/:id', mealController.updateMeal);

@@ -31,7 +31,7 @@ const getAllMeals = async () => {
       ['startTime', 'ASC']
     ]
   });
-  return meals;
+  return meals.map(meal => meal.toJSON());
 };
 
 // Get meal by ID
