@@ -224,10 +224,12 @@ const deleteStudent = async (id) => {
 
   const userId = student.userId;
 
-  // Delete student (this will cascade delete user due to foreign key)
+  // Delete student first
   await student.destroy();
 
-  // Also delete user if it exists
+  // Delete user if it exists
+  // We need to explicitly delete User because onDelete: 'CASCADE' only works when deleting User (which deletes Student)
+  // But when deleting Student, we need to manually delete the associated User
   if (userId) {
     const user = await User.findByPk(userId);
     if (user) {

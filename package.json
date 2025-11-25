@@ -7,7 +7,10 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "migrate": "node migrations/runMigrations.js",
-    "migrate:undo": "node migrations/undoLastMigration.js"
+    "migrate:undo": "node migrations/undoLastMigration.js",
+    "seed": "node seeders/runAllSeeders.js",
+    "fix:category": "node scripts/fix-category-enum.js",
+    "cleanup:users": "node scripts/cleanup-orphaned-users.js"
   },
   "keywords": [
     "erp",

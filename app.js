@@ -6,6 +6,8 @@ const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const collegeRoutes = require('./routes/collegeRoutes');
+const mealRoutes = require('./routes/mealRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 
 const app = express();
@@ -54,7 +56,10 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/colleges', collegeRoutes);
+app.use('/api/meals', mealRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

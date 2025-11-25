@@ -4,6 +4,7 @@ const Student = require('./Student');
 const Room = require('./Room');
 const RoomStudent = require('./RoomStudent');
 const College = require('./College');
+const Meal = require('./Meal');
 
 // Associations
 RefreshToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -34,6 +35,7 @@ module.exports = {
   Student,
   Room,
   RoomStudent,
-  College
+  College,
+  Meal
 };
 

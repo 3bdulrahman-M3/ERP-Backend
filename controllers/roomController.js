@@ -5,10 +5,10 @@ const createRoom = async (req, res) => {
   try {
     const { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice } = req.body;
 
-    if (!roomNumber || !totalBeds) {
+    if (!totalBeds) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide roomNumber and totalBeds'
+        message: 'Please provide totalBeds'
       });
     }
 

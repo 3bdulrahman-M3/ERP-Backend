@@ -19,7 +19,11 @@ const runMigrations = async () => {
     // Get all migration files
     const migrationsDir = path.join(__dirname);
     const files = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.js') && file !== 'runMigrations.js' && file !== 'undoLastMigration.js')
+      .filter(file => file.endsWith('.js') && 
+                      file !== 'runMigrations.js' && 
+                      file !== 'undoLastMigration.js' &&
+                      file !== 'fix-category-enum.js' &&
+                      file.startsWith('2024')) // Only files starting with year (proper migrations)
       .sort();
 
     // Get executed migrations

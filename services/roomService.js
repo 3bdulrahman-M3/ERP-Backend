@@ -1,8 +1,28 @@
-const { Room, Student, RoomStudent } = require('../models');
+const { Room, Student, RoomStudent, College, User } = require('../models');
 
 // Create room
 const createRoom = async (roomData) => {
-  const { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice } = roomData;
+  let { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice } = roomData;
+
+  // Auto-generate room number if not provided
+  if (!roomNumber) {
+    // Get all rooms and find the highest numeric room number
+    const allRooms = await Room.findAll({
+      attributes: ['roomNumber']
+    });
+
+    let maxNumber = 0;
+    for (const room of allRooms) {
+      // Try to parse room number as integer
+      const num = parseInt(room.roomNumber, 10);
+      if (!isNaN(num) && num > maxNumber) {
+        maxNumber = num;
+      }
+    }
+    
+    // Generate next room number (starts from 1 if no numeric rooms exist)
+    roomNumber = String(maxNumber + 1);
+  }
 
   // Check if room number already exists
   const existingRoom = await Room.findOne({ where: { roomNumber } });
@@ -63,12 +83,20 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
       include: [{
         model: Student,
         as: 'student',
-        attributes: ['id', 'name', 'email', 'college'],
-        include: [{
-          model: require('./../models').User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'role']
-        }]
+        attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'email', 'role']
+          },
+          {
+            model: College,
+            as: 'college',
+            attributes: ['id', 'name'],
+            required: false
+          }
+        ]
       }]
     }],
     limit: parseInt(limit),
@@ -102,12 +130,20 @@ const getRoomById = async (id) => {
       include: [{
         model: Student,
         as: 'student',
-        attributes: ['id', 'name', 'email', 'college', 'phoneNumber'],
-        include: [{
-          model: require('./../models').User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'role']
-        }]
+        attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'email', 'role']
+          },
+          {
+            model: College,
+            as: 'college',
+            attributes: ['id', 'name'],
+            required: false
+          }
+        ]
       }]
     }]
   });
@@ -266,7 +302,14 @@ const assignStudentToRoom = async (roomId, studentId, checkInDate, paid = false)
   await assignment.reload({
     include: [
       { model: Room, as: 'room' },
-      { model: Student, as: 'student', include: [{ model: require('./../models').User, as: 'user', attributes: ['id', 'name', 'email'] }] }
+      { 
+        model: Student, 
+        as: 'student', 
+        include: [
+          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
+          { model: College, as: 'college', attributes: ['id', 'name'], required: false }
+        ]
+      }
     ]
   });
 
@@ -339,12 +382,20 @@ const getRoomStudents = async (roomId, includeInactive = false) => {
     include: [{
       model: Student,
       as: 'student',
-      attributes: ['id', 'name', 'email', 'college', 'phoneNumber'],
-      include: [{
-        model: require('./../models').User,
-        as: 'user',
-        attributes: ['id', 'name', 'email', 'role']
-      }]
+      attributes: ['id', 'name', 'email', 'age', 'phoneNumber', 'collegeId'],
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'role']
+        },
+        {
+          model: College,
+          as: 'college',
+          attributes: ['id', 'name'],
+          required: false
+        }
+      ]
     }],
     order: [['checkInDate', 'DESC']]
   });
