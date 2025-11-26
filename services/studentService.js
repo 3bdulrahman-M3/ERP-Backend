@@ -21,7 +21,7 @@ const generateQRCode = async (studentId, studentName, studentEmail) => {
 
 // Create student and user
 const createStudent = async (studentData) => {
-  const { name, email, password, collegeId, year, age, phoneNumber } = studentData;
+  const { name, email, password, collegeId, year, age, phoneNumber, profileImage, governorate, address, guardianPhone, idCardImage } = studentData;
 
   // Check if email already exists
   const existingStudent = await Student.findOne({ where: { email } });
@@ -54,6 +54,11 @@ const createStudent = async (studentData) => {
     year: year || null,
     age,
     phoneNumber,
+    profileImage: profileImage || null,
+    governorate: governorate || null,
+    address: address || null,
+    guardianPhone: guardianPhone || null,
+    idCardImage: idCardImage || null,
     qrCode,
     userId: user.id
   });
@@ -149,7 +154,7 @@ const updateStudent = async (id, studentData) => {
     throw new Error('Student not found');
   }
 
-  const { name, email, password, collegeId, year, age, phoneNumber } = studentData;
+  const { name, email, password, collegeId, year, age, phoneNumber, profileImage, governorate, address, guardianPhone, idCardImage } = studentData;
 
   // Check if email is being changed and if it's already taken
   if (email && email !== student.email) {
@@ -171,6 +176,11 @@ const updateStudent = async (id, studentData) => {
   if (year !== undefined) student.year = year;
   if (age) student.age = age;
   if (phoneNumber) student.phoneNumber = phoneNumber;
+  if (profileImage !== undefined) student.profileImage = profileImage;
+  if (governorate !== undefined) student.governorate = governorate;
+  if (address !== undefined) student.address = address;
+  if (guardianPhone !== undefined) student.guardianPhone = guardianPhone;
+  if (idCardImage !== undefined) student.idCardImage = idCardImage;
 
   // Update password in user if provided (User model hook will hash it)
   if (password && student.user) {

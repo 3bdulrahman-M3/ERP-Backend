@@ -5,6 +5,8 @@ const Room = require('./Room');
 const RoomStudent = require('./RoomStudent');
 const College = require('./College');
 const Meal = require('./Meal');
+const CheckInOut = require('./CheckInOut');
+const Service = require('./Service');
 
 // Associations
 RefreshToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -29,6 +31,14 @@ RoomStudent.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
 Room.belongsToMany(Student, { through: RoomStudent, foreignKey: 'roomId', otherKey: 'studentId', as: 'students' });
 Student.belongsToMany(Room, { through: RoomStudent, foreignKey: 'studentId', otherKey: 'roomId', as: 'rooms' });
 
+// CheckInOut associations
+CheckInOut.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
+Student.hasMany(CheckInOut, { foreignKey: 'studentId', as: 'checkInOuts' });
+
+// Room-Service associations (many-to-many)
+Room.belongsToMany(Service, { through: 'room_services', foreignKey: 'roomId', otherKey: 'serviceId', as: 'services' });
+Service.belongsToMany(Room, { through: 'room_services', foreignKey: 'serviceId', otherKey: 'roomId', as: 'rooms' });
+
 module.exports = {
   User,
   RefreshToken,
@@ -36,6 +46,8 @@ module.exports = {
   Room,
   RoomStudent,
   College,
-  Meal
+  Meal,
+  CheckInOut,
+  Service
 };
 

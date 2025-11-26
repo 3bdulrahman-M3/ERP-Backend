@@ -70,6 +70,26 @@ const Student = sequelize.define('Student', {
       key: 'id'
     },
     onDelete: 'CASCADE'
+  },
+  profileImage: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  governorate: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  address: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  guardianPhone: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  idCardImage: {
+    type: DataTypes.TEXT,
+    allowNull: true
   }
 }, {
   tableName: 'students',

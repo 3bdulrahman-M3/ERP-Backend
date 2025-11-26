@@ -1,5 +1,6 @@
 const { Student, RoomStudent, Room } = require('../models');
 const mealService = require('./mealService');
+const checkInOutService = require('./checkInOutService');
 
 // Get student dashboard data
 const getStudentDashboard = async (studentId) => {
@@ -47,6 +48,9 @@ const getStudentDashboard = async (studentId) => {
   const allMeals = await mealService.getAllMeals();
   const activeMeals = allMeals.filter(meal => meal.isActive).map(meal => meal.toJSON());
 
+  // Get current check-in/out status
+  const checkInOutStatus = await checkInOutService.getCurrentStudentStatus(studentId);
+
   // Get current date and time
   const now = new Date();
   const currentDateTime = {
@@ -81,6 +85,7 @@ const getStudentDashboard = async (studentId) => {
       allMeals: activeMeals,
       currentDateTime: currentDateTime
     },
+    checkInOutStatus: checkInOutStatus,
     currentDateTime: currentDateTime
   };
 };

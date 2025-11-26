@@ -1,8 +1,8 @@
-const { Room, Student, RoomStudent, College, User } = require('../models');
+const { Room, Student, RoomStudent, College, User, Service } = require('../models');
 
 // Create room
 const createRoom = async (roomData) => {
-  let { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice } = roomData;
+  let { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
 
   // Auto-generate room number if not provided
   if (!roomNumber) {
@@ -55,6 +55,20 @@ const createRoom = async (roomData) => {
     description: description || null
   });
 
+  // Add services if provided
+  if (serviceIds && Array.isArray(serviceIds) && serviceIds.length > 0) {
+    await room.setServices(serviceIds);
+  }
+
+  // Reload with services
+  await room.reload({
+    include: [{
+      model: Service,
+      as: 'services',
+      attributes: ['id', 'name', 'description', 'icon']
+    }]
+  });
+
   return room.toJSON();
 };
 
@@ -75,9 +89,16 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
 
   const { count, rows } = await Room.findAndCountAll({
     where,
-    include: [{
-      model: RoomStudent,
-      as: 'roomStudents',
+    include: [
+      {
+        model: Service,
+        as: 'services',
+        attributes: ['id', 'name', 'description', 'icon'],
+        through: { attributes: [] }
+      },
+      {
+        model: RoomStudent,
+        as: 'roomStudents',
       where: { isActive: true },
       required: false,
       include: [{
@@ -122,30 +143,38 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
 // Get room by ID
 const getRoomById = async (id) => {
   const room = await Room.findByPk(id, {
-    include: [{
-      model: RoomStudent,
-      as: 'roomStudents',
-      where: { isActive: true },
-      required: false,
-      include: [{
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'role']
-          },
-          {
-            model: College,
-            as: 'college',
-            attributes: ['id', 'name'],
-            required: false
-          }
-        ]
-      }]
-    }]
+    include: [
+      {
+        model: Service,
+        as: 'services',
+        attributes: ['id', 'name', 'description', 'icon'],
+        through: { attributes: [] }
+      },
+      {
+        model: RoomStudent,
+        as: 'roomStudents',
+        where: { isActive: true },
+        required: false,
+        include: [{
+          model: Student,
+          as: 'student',
+          attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['id', 'name', 'email', 'role']
+            },
+            {
+              model: College,
+              as: 'college',
+              attributes: ['id', 'name'],
+              required: false
+            }
+          ]
+        }]
+      }
+    ]
   });
 
   if (!room) {
@@ -165,7 +194,7 @@ const updateRoom = async (id, roomData) => {
     throw new Error('Room not found');
   }
 
-  const { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice } = roomData;
+  const { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
 
   // Check if room number is being changed and if it's already taken
   if (roomNumber && roomNumber !== room.roomNumber) {
@@ -206,6 +235,15 @@ const updateRoom = async (id, roomData) => {
 
   await room.save();
 
+  // Update services if provided
+  if (serviceIds !== undefined) {
+    if (Array.isArray(serviceIds)) {
+      await room.setServices(serviceIds);
+    } else {
+      await room.setServices([]);
+    }
+  }
+
   // Update status based on available beds
   if (room.availableBeds === 0) {
     room.status = 'reserved'; // Room is fully occupied, mark as reserved
@@ -218,25 +256,36 @@ const updateRoom = async (id, roomData) => {
   }
   await room.save();
 
+  // Reload with services
+  await room.reload({
+    include: [{
+      model: Service,
+      as: 'services',
+      attributes: ['id', 'name', 'description', 'icon'],
+      through: { attributes: [] }
+    }]
+  });
+
   return room.toJSON();
 };
 
 // Delete room
 const deleteRoom = async (id) => {
-  const room = await Room.findByPk(id, {
-    include: [{
-      model: RoomStudent,
-      as: 'roomStudents',
-      where: { isActive: true }
-    }]
-  });
+  const room = await Room.findByPk(id);
 
   if (!room) {
     throw new Error('Room not found');
   }
 
   // Check if room has active students
-  if (room.roomStudents && room.roomStudents.length > 0) {
+  const activeStudents = await RoomStudent.findAll({
+    where: {
+      roomId: id,
+      isActive: true
+    }
+  });
+
+  if (activeStudents && activeStudents.length > 0) {
     throw new Error('Cannot delete room with active students. Please check out all students first.');
   }
 

@@ -1,11 +1,38 @@
-const { College } = require('../models');
+const { College, Student } = require('../models');
+const { Sequelize } = require('sequelize');
 
-// Get all colleges
-const getAllColleges = async () => {
-  const colleges = await College.findAll({
-    order: [['name', 'ASC']]
+// Get all colleges with student count
+const getAllColleges = async (page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  
+  const { count, rows } = await College.findAndCountAll({
+    order: [['name', 'ASC']],
+    limit: parseInt(limit),
+    offset: parseInt(offset)
   });
-  return colleges;
+  
+  // Get student count for each college
+  const collegesWithCount = await Promise.all(
+    rows.map(async (college) => {
+      const studentCount = await Student.count({
+        where: { collegeId: college.id }
+      });
+      
+      const collegeData = college.toJSON();
+      collegeData.studentCount = studentCount;
+      return collegeData;
+    })
+  );
+  
+  return {
+    colleges: collegesWithCount,
+    pagination: {
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(count / limit)
+    }
+  };
 };
 
 // Get college by ID

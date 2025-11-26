@@ -1,15 +1,15 @@
-const collegeService = require('../services/collegeService');
+const serviceService = require('../services/serviceService');
 
-// Get all colleges
-const getAllColleges = async (req, res) => {
+// Get all services
+const getAllServices = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     
-    const result = await collegeService.getAllColleges(page, limit);
+    const result = await serviceService.getAllServices(page, limit);
     res.json({
       success: true,
-      message: 'Colleges retrieved successfully',
+      message: 'Services retrieved successfully',
       data: result
     });
   } catch (error) {
@@ -20,15 +20,15 @@ const getAllColleges = async (req, res) => {
   }
 };
 
-// Get college by ID
-const getCollegeById = async (req, res) => {
+// Get service by ID
+const getServiceById = async (req, res) => {
   try {
     const { id } = req.params;
-    const college = await collegeService.getCollegeById(id);
+    const service = await serviceService.getServiceById(id);
     res.json({
       success: true,
-      message: 'College retrieved successfully',
-      data: college
+      message: 'Service retrieved successfully',
+      data: service
     });
   } catch (error) {
     res.status(404).json({
@@ -38,24 +38,24 @@ const getCollegeById = async (req, res) => {
   }
 };
 
-// Create college
-const createCollege = async (req, res) => {
+// Create service
+const createService = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, icon } = req.body;
 
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide college name'
+        message: 'Please provide service name'
       });
     }
 
-    const college = await collegeService.createCollege({ name, description });
+    const service = await serviceService.createService({ name, description, icon });
 
     res.status(201).json({
       success: true,
-      message: 'College created successfully',
-      data: college
+      message: 'Service created successfully',
+      data: service
     });
   } catch (error) {
     res.status(400).json({
@@ -65,18 +65,18 @@ const createCollege = async (req, res) => {
   }
 };
 
-// Update college
-const updateCollege = async (req, res) => {
+// Update service
+const updateService = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
 
-    const college = await collegeService.updateCollege(id, updateData);
+    const service = await serviceService.updateService(id, updateData);
 
     res.json({
       success: true,
-      message: 'College updated successfully',
-      data: college
+      message: 'Service updated successfully',
+      data: service
     });
   } catch (error) {
     res.status(400).json({
@@ -86,16 +86,16 @@ const updateCollege = async (req, res) => {
   }
 };
 
-// Delete college
-const deleteCollege = async (req, res) => {
+// Delete service
+const deleteService = async (req, res) => {
   try {
     const { id } = req.params;
 
-    await collegeService.deleteCollege(id);
+    await serviceService.deleteService(id);
 
     res.json({
       success: true,
-      message: 'College deleted successfully'
+      message: 'Service deleted successfully'
     });
   } catch (error) {
     res.status(404).json({
@@ -106,10 +106,10 @@ const deleteCollege = async (req, res) => {
 };
 
 module.exports = {
-  getAllColleges,
-  getCollegeById,
-  createCollege,
-  updateCollege,
-  deleteCollege
+  getAllServices,
+  getServiceById,
+  createService,
+  updateService,
+  deleteService
 };
 

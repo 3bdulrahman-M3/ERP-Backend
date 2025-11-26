@@ -3,6 +3,7 @@ const { sequelize } = require('../config/database');
 const seedAdmin = require('./seedAdmin');
 const seedMeals = require('./seedMeals');
 const seedColleges = require('./seedColleges');
+const seedServices = require('./seedServices');
 
 const runAllSeeders = async () => {
   try {
@@ -21,6 +22,10 @@ const runAllSeeders = async () => {
     
     console.log('🏛️  Seeding Colleges...');
     await seedColleges();
+    console.log('');
+    
+    console.log('🔧 Seeding Services...');
+    await seedServices();
     console.log('');
     
     await sequelize.close();

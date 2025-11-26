@@ -3,7 +3,7 @@ const studentService = require('../services/studentService');
 // Create student
 const createStudent = async (req, res) => {
   try {
-    const { name, email, password, collegeId, year, age, phoneNumber } = req.body;
+    const { name, email, password, collegeId, year, age, phoneNumber, profileImage, governorate, address, guardianPhone, idCardImage } = req.body;
 
     // Validation
     if (!name || !email || !password || !age || !phoneNumber) {
@@ -20,7 +20,12 @@ const createStudent = async (req, res) => {
       collegeId,
       year,
       age,
-      phoneNumber
+      phoneNumber,
+      profileImage,
+      governorate,
+      address,
+      guardianPhone,
+      idCardImage
     });
 
     res.status(201).json({

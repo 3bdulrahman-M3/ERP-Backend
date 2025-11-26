@@ -24,14 +24,27 @@ const isTimeBetween = (currentTime, startTime, endTime) => {
 };
 
 // Get all meals
-const getAllMeals = async () => {
-  const meals = await Meal.findAll({
+const getAllMeals = async (page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  
+  const { count, rows } = await Meal.findAndCountAll({
     order: [
       ['name', 'ASC'],
       ['startTime', 'ASC']
-    ]
+    ],
+    limit: parseInt(limit),
+    offset: parseInt(offset)
   });
-  return meals.map(meal => meal.toJSON());
+  
+  return {
+    meals: rows.map(meal => meal.toJSON()),
+    pagination: {
+      total: count,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(count / limit)
+    }
+  };
 };
 
 // Get meal by ID

@@ -3,11 +3,14 @@ const mealService = require('../services/mealService');
 // Get all meals
 const getAllMeals = async (req, res) => {
   try {
-    const meals = await mealService.getAllMeals();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const result = await mealService.getAllMeals(page, limit);
     res.json({
       success: true,
       message: 'Meals retrieved successfully',
-      data: meals
+      data: result
     });
   } catch (error) {
     res.status(500).json({

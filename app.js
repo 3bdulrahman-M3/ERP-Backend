@@ -8,7 +8,11 @@ const roomRoutes = require('./routes/roomRoutes');
 const collegeRoutes = require('./routes/collegeRoutes');
 const mealRoutes = require('./routes/mealRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const checkInOutRoutes = require('./routes/checkInOutRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
+const serviceRoutes = require('./routes/serviceRoutes');
 const responseHandler = require('./middlewares/responseHandler');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,6 +21,10 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded files - يجب أن يكون قبل responseHandler
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 app.use(responseHandler);
 
 // Routes
@@ -57,9 +65,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/colleges', collegeRoutes);
 app.use('/api/meals', mealRoutes);
+app.use('/api/check-in-out', checkInOutRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/services', serviceRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
