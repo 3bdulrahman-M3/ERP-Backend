@@ -114,10 +114,104 @@ const logout = async (refreshToken) => {
   await revokeRefreshToken(refreshToken);
 };
 
+// Update user profile
+const updateProfile = async (userId, updateData) => {
+  const { Student } = require('../models');
+  const { name, email, password, profileImage } = updateData;
+
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Check if email is being changed and if it's already taken
+  if (email && email !== user.email) {
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      throw new Error('Email already exists');
+    }
+    
+    // Also check if email exists in students table
+    const existingStudent = await Student.findOne({ where: { email } });
+    if (existingStudent) {
+      throw new Error('Email already exists');
+    }
+    
+    user.email = email;
+  }
+
+  // Update name if provided
+  if (name) {
+    user.name = name;
+  }
+
+  // Update password if provided (will be hashed by User model hook)
+  if (password) {
+    user.password = password;
+  }
+
+  // Update profile image if provided
+  if (profileImage !== undefined) {
+    user.profileImage = profileImage;
+  }
+
+  await user.save();
+
+  // If user is a student, sync changes to Student table
+  if (user.role === 'student') {
+    const student = await Student.findOne({ where: { userId: user.id } });
+    if (student) {
+      let studentUpdated = false;
+      if (name && student.name !== name) {
+        student.name = name;
+        studentUpdated = true;
+      }
+      if (email && student.email !== email) {
+        student.email = email;
+        studentUpdated = true;
+      }
+      if (profileImage !== undefined && student.profileImage !== profileImage) {
+        student.profileImage = profileImage;
+        studentUpdated = true;
+      }
+      
+      // Regenerate QR code if name or email changed
+      if (name || email) {
+        const QRCode = require('qrcode');
+        const qrData = JSON.stringify({
+          id: student.id,
+          name: student.name,
+          email: student.email,
+          type: 'student'
+        });
+        student.qrCode = await QRCode.toDataURL(qrData);
+        studentUpdated = true;
+      }
+      
+      if (studentUpdated) {
+        await student.save();
+      }
+    }
+  }
+
+  return user.toJSON();
+};
+
+// Get user profile
+const getProfile = async (userId) => {
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+  return user.toJSON();
+};
+
 module.exports = {
   login,
   refreshAccessToken,
   logout,
   revokeAllUserTokens,
-  generateAccessToken
+  generateAccessToken,
+  updateProfile,
+  getProfile
 };

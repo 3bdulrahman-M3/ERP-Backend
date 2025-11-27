@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('services', {
+    await queryInterface.createTable('buildings', {
       id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
@@ -11,16 +11,36 @@ module.exports = {
       name: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true
+        validate: {
+          notEmpty: true
+        }
       },
-      description: {
+      address: {
         type: DataTypes.TEXT,
         allowNull: true
       },
-      icon: {
-        type: DataTypes.STRING,
+      latitude: {
+        type: DataTypes.DECIMAL(10, 8),
+        allowNull: true
+      },
+      longitude: {
+        type: DataTypes.DECIMAL(11, 8),
+        allowNull: true
+      },
+      floors: {
+        type: DataTypes.INTEGER,
         allowNull: true,
-        comment: 'أيقونة الخدمة (مثل: wifi, ac, tv)'
+        validate: {
+          min: 0
+        }
+      },
+      roomCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        validate: {
+          min: 0
+        }
       },
       createdAt: {
         type: DataTypes.DATE,
@@ -34,16 +54,14 @@ module.exports = {
       }
     });
 
-    // Create index
-    await queryInterface.addIndex('services', ['name'], {
-      unique: true,
-      name: 'services_name_unique'
+    // Create indexes
+    await queryInterface.addIndex('buildings', ['name'], {
+      name: 'buildings_name_index'
     });
   },
 
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('services');
+    await queryInterface.dropTable('buildings');
   }
 };
-
 

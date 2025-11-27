@@ -1,5 +1,6 @@
 const { CheckInOut, Student, User, College } = require('../models');
 const { Op } = require('sequelize');
+const notificationService = require('./notificationService');
 
 // Parse QR code data and get student ID
 const parseQRCode = async (qrData) => {
@@ -71,12 +72,45 @@ const checkInStudent = async (studentId, notes = null) => {
     ]
   });
 
+  // Send notification to student
+  try {
+    if (student.user) {
+      await notificationService.createNotification(
+        student.user.id,
+        'check_in',
+        'تم تسجيل الدخول',
+        `تم تسجيل دخولك بنجاح في ${new Date().toLocaleString('ar-EG')}`,
+        checkIn.id,
+        'check_in_out'
+      );
+    }
+  } catch (error) {
+    console.error('Error creating check-in notification for student:', error);
+  }
+
+  // Send notification to admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'student_check_in',
+      'تسجيل دخول طالب',
+      `قام الطالب ${student.name} (${student.email}) بتسجيل الدخول`,
+      checkIn.id,
+      'check_in_out'
+    );
+  } catch (error) {
+    console.error('Error creating check-in notification for admins:', error);
+  }
+
   return checkIn.toJSON();
 };
 
 // Check out student
 const checkOutStudent = async (studentId, notes = null) => {
-  const student = await Student.findByPk(studentId);
+  const student = await Student.findByPk(studentId, {
+    include: [
+      { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
+    ]
+  });
 
   if (!student) {
     throw new Error('Student not found');
@@ -117,6 +151,35 @@ const checkOutStudent = async (studentId, notes = null) => {
       }
     ]
   });
+
+  // Send notification to student
+  try {
+    if (student.user) {
+      await notificationService.createNotification(
+        student.user.id,
+        'check_out',
+        'تم تسجيل الخروج',
+        `تم تسجيل خروجك بنجاح في ${new Date().toLocaleString('ar-EG')}`,
+        checkIn.id,
+        'check_in_out'
+      );
+    }
+  } catch (error) {
+    console.error('Error creating check-out notification for student:', error);
+  }
+
+  // Create notification for admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'student_check_out',
+      'تسجيل خروج طالب',
+      `تم تسجيل خروج الطالب ${student.user?.name || student.name}`,
+      studentId,
+      'student'
+    );
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
 
   return checkIn.toJSON();
 };

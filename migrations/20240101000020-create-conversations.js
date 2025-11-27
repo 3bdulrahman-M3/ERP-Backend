@@ -2,29 +2,35 @@ const { DataTypes } = require('sequelize');
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('room_services', {
+    await queryInterface.createTable('conversations', {
       id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true
       },
-      roomId: {
+      studentId: {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-          model: 'rooms',
+          model: 'students',
           key: 'id'
         },
-        onDelete: 'CASCADE'
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE'
       },
-      serviceId: {
+      adminId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: {
-          model: 'services',
+          model: 'users',
           key: 'id'
         },
-        onDelete: 'CASCADE'
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE'
+      },
+      lastMessageAt: {
+        type: DataTypes.DATE,
+        allowNull: true
       },
       createdAt: {
         type: DataTypes.DATE,
@@ -38,25 +44,20 @@ module.exports = {
       }
     });
 
-    // Create unique constraint to prevent duplicate room-service pairs
-    await queryInterface.addIndex('room_services', ['roomId', 'serviceId'], {
-      unique: true,
-      name: 'room_services_roomId_serviceId_unique'
-    });
-
     // Create indexes
-    await queryInterface.addIndex('room_services', ['roomId'], {
-      name: 'room_services_roomId_index'
+    await queryInterface.addIndex('conversations', ['studentId'], {
+      name: 'conversations_studentId_index'
     });
-
-    await queryInterface.addIndex('room_services', ['serviceId'], {
-      name: 'room_services_serviceId_index'
+    await queryInterface.addIndex('conversations', ['adminId'], {
+      name: 'conversations_adminId_index'
+    });
+    await queryInterface.addIndex('conversations', ['lastMessageAt'], {
+      name: 'conversations_lastMessageAt_index'
     });
   },
 
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('room_services');
+    await queryInterface.dropTable('conversations');
   }
 };
-
 

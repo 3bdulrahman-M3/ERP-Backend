@@ -26,6 +26,16 @@ const Room = sequelize.define('Room', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  buildingId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'buildings',
+      key: 'id'
+    },
+    onDelete: 'SET NULL',
+    onUpdate: 'CASCADE'
+  },
   totalBeds: {
     type: DataTypes.INTEGER,
     allowNull: false,

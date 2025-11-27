@@ -30,3 +30,4 @@ const Service = sequelize.define('Service', {
 
 module.exports = Service;
 
+

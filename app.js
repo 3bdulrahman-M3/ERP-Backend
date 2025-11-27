@@ -11,6 +11,11 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const checkInOutRoutes = require('./routes/checkInOutRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
+const buildingRoutes = require('./routes/buildingRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const preferenceRoutes = require('./routes/preferenceRoutes');
+const roomRequestRoutes = require('./routes/roomRequestRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 const path = require('path');
 
@@ -70,6 +75,11 @@ app.use('/api/meals', mealRoutes);
 app.use('/api/check-in-out', checkInOutRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/buildings', buildingRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/preferences', preferenceRoutes);
+app.use('/api/room-requests', roomRequestRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

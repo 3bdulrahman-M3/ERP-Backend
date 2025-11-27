@@ -1,5 +1,12 @@
-const { Meal } = require('../models');
+const { Meal, User } = require('../models');
 const { Op } = require('sequelize');
+const notificationService = require('./notificationService');
+
+// Track previous kitchen status (in-memory cache)
+let previousKitchenStatus = {
+  isOpen: false,
+  currentMealId: null
+};
 
 // Helper function to get current time in HH:mm format
 const getCurrentTime = () => {
@@ -83,6 +90,19 @@ const createMeal = async (mealData) => {
     isActive: isActive !== undefined ? isActive : true,
     category: category || null
   });
+
+  // Create notification for admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'meal_created',
+      'وجبة جديدة',
+      `تم إضافة وجبة جديدة: ${name}`,
+      meal.id,
+      'meal'
+    );
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
 
   return meal.toJSON();
 };
@@ -202,6 +222,88 @@ const getKitchenStatus = async () => {
         break;
       }
     }
+  }
+
+  const currentStatus = {
+    isOpen: currentMeal !== null,
+    currentMealId: currentMeal ? currentMeal.id : null
+  };
+
+  // Check if kitchen status changed and send notifications
+  if (previousKitchenStatus.isOpen !== currentStatus.isOpen) {
+    try {
+      // Get all active users (students and admins)
+      const allUsers = await User.findAll({
+        where: { isActive: true },
+        attributes: ['id']
+      });
+
+      const userIds = allUsers.map(u => u.id);
+
+      if (currentStatus.isOpen) {
+        // Kitchen just opened
+        const mealName = currentMeal ? currentMeal.name : 'وجبة';
+        await Promise.all(
+          userIds.map(userId =>
+            notificationService.createNotification(
+              userId,
+              'kitchen_opened',
+              'المطبخ مفتوح الآن',
+              `تم فتح المطبخ! الوجبة الحالية: ${mealName}`,
+              currentMeal ? currentMeal.id : null,
+              'meal'
+            )
+          )
+        );
+      } else {
+        // Kitchen just closed
+        await Promise.all(
+          userIds.map(userId =>
+            notificationService.createNotification(
+              userId,
+              'kitchen_closed',
+              'المطبخ مغلق الآن',
+              `تم إغلاق المطبخ. ${nextMeal ? `الوجبة القادمة: ${nextMeal.name}` : 'لا توجد وجبات قادمة'}`,
+              null,
+              'meal'
+            )
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error creating kitchen status notification:', error);
+    }
+
+    // Update previous status
+    previousKitchenStatus = currentStatus;
+  } else if (currentStatus.isOpen && previousKitchenStatus.currentMealId !== currentStatus.currentMealId) {
+    // Meal changed while kitchen is open
+    try {
+      const allUsers = await User.findAll({
+        where: { isActive: true },
+        attributes: ['id']
+      });
+
+      const userIds = allUsers.map(u => u.id);
+      const mealName = currentMeal ? currentMeal.name : 'وجبة';
+
+      await Promise.all(
+        userIds.map(userId =>
+          notificationService.createNotification(
+            userId,
+            'meal_changed',
+            'تغيير الوجبة',
+            `الوجبة الحالية الآن: ${mealName}`,
+            currentMeal ? currentMeal.id : null,
+            'meal'
+          )
+        )
+      );
+    } catch (error) {
+      console.error('Error creating meal change notification:', error);
+    }
+
+    previousKitchenStatus = currentStatus;
   }
 
   return {

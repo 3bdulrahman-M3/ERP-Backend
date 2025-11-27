@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
 const { Sequelize } = require('sequelize');
 const { Student, User, RoomStudent, College } = require('../models');
+const notificationService = require('./notificationService');
 
 // Generate QR Code
 const generateQRCode = async (studentId, studentName, studentEmail) => {
@@ -77,6 +78,19 @@ const createStudent = async (studentData) => {
     delete studentResponse.user.password;
   }
 
+  // Create notification for admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'student_created',
+      'طالب جديد',
+      `تم إضافة طالب جديد: ${name}`,
+      student.id,
+      'student'
+    );
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
+
   return studentResponse;
 };
 
@@ -122,16 +136,27 @@ const getAllStudents = async (page = 1, limit = 10, excludeAssigned = false) => 
 
 // Get student by ID
 const getStudentById = async (id) => {
+  const { Room, Building } = require('../models');
   const student = await Student.findByPk(id, {
     include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
+      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive', 'profileImage'] },
       { model: College, as: 'college', attributes: ['id', 'name'] },
       { 
         model: RoomStudent, 
         as: 'roomAssignments',
         where: { isActive: true },
         required: false,
-        include: [{ model: require('../models').Room, as: 'room', attributes: ['id', 'roomNumber', 'building'] }]
+        include: [{ 
+          model: Room, 
+          as: 'room', 
+          attributes: ['id', 'roomNumber', 'building', 'buildingId'],
+          include: [{
+            model: Building,
+            as: 'buildingInfo',
+            attributes: ['id', 'name', 'address'],
+            required: false
+          }]
+        }]
       }
     ],
     attributes: { exclude: ['password'] }
@@ -169,7 +194,7 @@ const updateStudent = async (id, studentData) => {
     }
   }
 
-  // Update student
+  // Update student fields first
   if (name) student.name = name;
   if (email) student.email = email;
   if (collegeId !== undefined) student.collegeId = collegeId;
@@ -182,29 +207,27 @@ const updateStudent = async (id, studentData) => {
   if (guardianPhone !== undefined) student.guardianPhone = guardianPhone;
   if (idCardImage !== undefined) student.idCardImage = idCardImage;
 
-  // Update password in user if provided (User model hook will hash it)
-  if (password && student.user) {
-    student.user.password = password; // User model beforeUpdate hook will hash it automatically
-  }
-
-  // Regenerate QR code if student data changed
+  // Regenerate QR code if student data changed (use updated values)
   if (name || email) {
     const qrCode = await generateQRCode(student.userId, student.name, student.email);
     student.qrCode = qrCode;
   }
 
-  await student.save();
-
-  // Update user if needed
+  // Update user to sync all shared fields (name, email, profileImage, password)
+  // This ensures User table is always in sync with Student table
   if (student.user) {
     if (name) student.user.name = name;
     if (email) student.user.email = email;
+    if (profileImage !== undefined) student.user.profileImage = profileImage;
     if (password) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      student.user.password = hashedPassword;
+      // Password will be hashed by User model hook
+      student.user.password = password;
     }
     await student.user.save();
   }
+
+  // Save student after user is updated
+  await student.save();
 
   await student.reload({ 
     include: [

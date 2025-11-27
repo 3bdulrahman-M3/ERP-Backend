@@ -78,9 +78,48 @@ const logout = async (req, res, next) => {
   }
 };
 
+const getProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const user = await authService.getProfile(userId);
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    res.status(404).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { name, email, password, profileImage } = req.body;
+
+    const user = await authService.updateProfile(userId, { name, email, password, profileImage });
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: user
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   login,
   refreshToken,
-  logout
+  logout,
+  getProfile,
+  updateProfile
 };
 

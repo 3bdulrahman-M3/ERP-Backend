@@ -2,25 +2,31 @@ const { DataTypes } = require('sequelize');
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.createTable('services', {
+    await queryInterface.createTable('preferences', {
       id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true
       },
-      name: {
-        type: DataTypes.STRING,
+      userId: {
+        type: DataTypes.INTEGER,
         allowNull: false,
-        unique: true
+        unique: true,
+        references: {
+          model: 'users',
+          key: 'id'
+        },
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE'
       },
-      description: {
-        type: DataTypes.TEXT,
+      roomType: {
+        type: DataTypes.ENUM('single', 'shared'),
         allowNull: true
       },
-      icon: {
-        type: DataTypes.STRING,
+      preferredServices: {
+        type: DataTypes.JSON,
         allowNull: true,
-        comment: 'أيقونة الخدمة (مثل: wifi, ac, tv)'
+        defaultValue: []
       },
       createdAt: {
         type: DataTypes.DATE,
@@ -34,16 +40,13 @@ module.exports = {
       }
     });
 
-    // Create index
-    await queryInterface.addIndex('services', ['name'], {
-      unique: true,
-      name: 'services_name_unique'
+    await queryInterface.addIndex('preferences', ['userId'], {
+      name: 'preferences_userId_index'
     });
   },
 
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable('services');
+    await queryInterface.dropTable('preferences');
   }
 };
-
 

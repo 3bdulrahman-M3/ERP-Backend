@@ -1,8 +1,11 @@
-const { Room, Student, RoomStudent, College, User, Service } = require('../models');
+const { Room, Student, RoomStudent, College, User, Service, Building, RoomRequest } = require('../models');
+const { Op } = require('sequelize');
+const notificationService = require('./notificationService');
+const preferenceService = require('./preferenceService');
 
 // Create room
 const createRoom = async (roomData) => {
-  let { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
+  let { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
 
   // Auto-generate room number if not provided
   if (!roomNumber) {
@@ -45,7 +48,7 @@ const createRoom = async (roomData) => {
   const room = await Room.create({
     roomNumber,
     floor: floor || null,
-    building: building || null,
+    buildingId: buildingId || null,
     totalBeds,
     availableBeds: totalBeds, // Initially all beds are available
     status: status || 'available',
@@ -55,19 +58,101 @@ const createRoom = async (roomData) => {
     description: description || null
   });
 
+  // Update building room count if buildingId is provided
+  if (buildingId) {
+    const building = await Building.findByPk(buildingId);
+    if (building) {
+      building.roomCount = (building.roomCount || 0) + 1;
+      await building.save();
+    }
+  }
+
   // Add services if provided
   if (serviceIds && Array.isArray(serviceIds) && serviceIds.length > 0) {
     await room.setServices(serviceIds);
   }
 
-  // Reload with services
+  // Reload with services and building
   await room.reload({
-    include: [{
-      model: Service,
-      as: 'services',
-      attributes: ['id', 'name', 'description', 'icon']
-    }]
+    include: [
+      {
+        model: Service,
+        as: 'services',
+        attributes: ['id', 'name', 'description', 'icon']
+      },
+      {
+        model: Building,
+        as: 'buildingInfo',
+        attributes: ['id', 'name', 'address']
+      }
+    ]
   });
+
+  // Create notification for admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'room_created',
+      'غرفة جديدة',
+      `تم إضافة غرفة جديدة: ${roomNumber}`,
+      room.id,
+      'room'
+    );
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
+
+  // Notify students with matching preferences
+  try {
+    const roomServiceIds = room.services ? room.services.map(s => s.id) : [];
+    const { Service } = require('../models');
+    
+    // Get service names for the notification message
+    const roomServices = await Service.findAll({
+      where: { id: roomServiceIds },
+      attributes: ['id', 'name']
+    });
+    const serviceNames = roomServices.map(s => s.name).join('، ');
+
+    const matchingUserIds = await preferenceService.getStudentsWithMatchingPreferences(
+      room.roomType,
+      roomServiceIds
+    );
+
+    // Send notification to each matching student with details about matching services
+    for (const userId of matchingUserIds) {
+      // Get student's preferences to find which services matched
+      const { User, Preference } = require('../models');
+      const user = await User.findByPk(userId, {
+        include: [{ model: Preference, as: 'preference' }]
+      });
+
+      if (user && user.preference) {
+        const matchingServices = roomServices.filter(s => 
+          user.preference.preferredServices.includes(s.id)
+        );
+        const matchingServiceNames = matchingServices.map(s => s.name).join('، ');
+
+        let message = `تم إنشاء غرفة جديدة (${roomNumber})`;
+        if (matchingServiceNames) {
+          message += ` تحتوي على: ${matchingServiceNames}`;
+        }
+        if (room.roomType && user.preference.roomType === room.roomType) {
+          message += ` - نوع الغرفة: ${room.roomType === 'single' ? 'فردية' : 'جماعية'}`;
+        }
+
+        await notificationService.createNotification(
+          userId,
+          'room_match_preferences',
+          'غرفة جديدة تطابق تفضيلاتك',
+          message,
+          room.id,
+          'room'
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Error notifying students with matching preferences:', error);
+  }
 
   return room.toJSON();
 };
@@ -80,8 +165,8 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
   if (filters.status) {
     where.status = filters.status;
   }
-  if (filters.building) {
-    where.building = filters.building;
+  if (filters.buildingId !== undefined) {
+    where.buildingId = filters.buildingId;
   }
   if (filters.floor !== undefined) {
     where.floor = filters.floor;
@@ -95,6 +180,12 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
         as: 'services',
         attributes: ['id', 'name', 'description', 'icon'],
         through: { attributes: [] }
+      },
+      {
+        model: Building,
+        as: 'buildingInfo',
+        attributes: ['id', 'name', 'address'],
+        required: false
       },
       {
         model: RoomStudent,
@@ -125,10 +216,26 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
     order: [['roomNumber', 'ASC']]
   });
 
+  // Get pending requests count for each room
+  const roomIds = rows.map(r => r.id);
+  const pendingRequests = await RoomRequest.findAll({
+    where: {
+      roomId: { [Op.in]: roomIds },
+      status: 'pending'
+    },
+    attributes: ['roomId']
+  });
+
+  const requestsMap = {};
+  pendingRequests.forEach(req => {
+    requestsMap[req.roomId] = (requestsMap[req.roomId] || 0) + 1;
+  });
+
   return {
     rooms: rows.map(room => {
       const roomData = room.toJSON();
       roomData.occupiedBeds = roomData.roomStudents ? roomData.roomStudents.length : 0;
+      roomData.pendingRequestsCount = requestsMap[room.id] || 0;
       return roomData;
     }),
     pagination: {
@@ -151,9 +258,39 @@ const getRoomById = async (id) => {
         through: { attributes: [] }
       },
       {
+        model: Building,
+        as: 'buildingInfo',
+        attributes: ['id', 'name', 'address', 'latitude', 'longitude', 'floors'],
+        required: false
+      },
+      {
         model: RoomStudent,
         as: 'roomStudents',
         where: { isActive: true },
+        required: false,
+        include: [{
+          model: Student,
+          as: 'student',
+          attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
+          include: [
+            {
+              model: User,
+              as: 'user',
+              attributes: ['id', 'name', 'email', 'role']
+            },
+            {
+              model: College,
+              as: 'college',
+              attributes: ['id', 'name'],
+              required: false
+            }
+          ]
+        }]
+      },
+      {
+        model: RoomRequest,
+        as: 'requests',
+        where: { status: 'pending' },
         required: false,
         include: [{
           model: Student,
@@ -194,7 +331,7 @@ const updateRoom = async (id, roomData) => {
     throw new Error('Room not found');
   }
 
-  const { roomNumber, floor, building, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
+  const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
 
   // Check if room number is being changed and if it's already taken
   if (roomNumber && roomNumber !== room.roomNumber) {
@@ -227,7 +364,24 @@ const updateRoom = async (id, roomData) => {
   }
 
   if (floor !== undefined) room.floor = floor;
-  if (building !== undefined) room.building = building;
+  if (buildingId !== undefined) {
+    // Update building room counts if building is changed
+    if (room.buildingId && room.buildingId !== buildingId) {
+      const oldBuilding = await Building.findByPk(room.buildingId);
+      if (oldBuilding) {
+        oldBuilding.roomCount = Math.max(0, (oldBuilding.roomCount || 0) - 1);
+        await oldBuilding.save();
+      }
+    }
+    if (buildingId) {
+      const newBuilding = await Building.findByPk(buildingId);
+      if (newBuilding) {
+        newBuilding.roomCount = (newBuilding.roomCount || 0) + 1;
+        await newBuilding.save();
+      }
+    }
+    room.buildingId = buildingId;
+  }
   if (description !== undefined) room.description = description;
   if (status !== undefined) room.status = status;
   if (roomPrice !== undefined) room.roomPrice = roomPrice;
@@ -256,14 +410,21 @@ const updateRoom = async (id, roomData) => {
   }
   await room.save();
 
-  // Reload with services
+  // Reload with services and building
   await room.reload({
-    include: [{
-      model: Service,
-      as: 'services',
-      attributes: ['id', 'name', 'description', 'icon'],
-      through: { attributes: [] }
-    }]
+    include: [
+      {
+        model: Service,
+        as: 'services',
+        attributes: ['id', 'name', 'description', 'icon'],
+        through: { attributes: [] }
+      },
+      {
+        model: Building,
+        as: 'buildingInfo',
+        attributes: ['id', 'name', 'address']
+      }
+    ]
   });
 
   return room.toJSON();
@@ -287,6 +448,15 @@ const deleteRoom = async (id) => {
 
   if (activeStudents && activeStudents.length > 0) {
     throw new Error('Cannot delete room with active students. Please check out all students first.');
+  }
+
+  // Update building room count if room has a building
+  if (room.buildingId) {
+    const building = await Building.findByPk(room.buildingId);
+    if (building) {
+      building.roomCount = Math.max(0, (building.roomCount || 0) - 1);
+      await building.save();
+    }
   }
 
   await room.destroy();
