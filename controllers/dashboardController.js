@@ -32,7 +32,26 @@ const getStudentDashboard = async (req, res) => {
   }
 };
 
+// Get admin dashboard statistics
+const getAdminStatistics = async (req, res) => {
+  try {
+    const statistics = await dashboardService.getAdminStatistics();
+
+    res.json({
+      success: true,
+      message: 'Admin statistics retrieved successfully',
+      data: statistics
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
-  getStudentDashboard
+  getStudentDashboard,
+  getAdminStatistics
 };
 

@@ -9,5 +9,8 @@ router.use(authMiddleware);
 // Student dashboard
 router.get('/student', dashboardController.getStudentDashboard);
 
+// Admin dashboard statistics
+router.get('/admin/statistics', dashboardController.getAdminStatistics);
+
 module.exports = router;
 

@@ -46,3 +46,5 @@ const Notification = sequelize.define('Notification', {
 
 module.exports = Notification;
 
+
+

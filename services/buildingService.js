@@ -1,4 +1,4 @@
-const { Building, Room } = require('../models');
+const { Building, Room, RoomStudent } = require('../models');
 
 // Get all buildings with room count
 const getAllBuildings = async (page = 1, limit = 10) => {
@@ -16,9 +16,20 @@ const getAllBuildings = async (page = 1, limit = 10) => {
       const roomCount = await Room.count({
         where: { buildingId: building.id }
       });
+
+      const studentCount = await RoomStudent.count({
+        where: { isActive: true },
+        include: [{
+          model: Room,
+          as: 'room',
+          required: true,
+          where: { buildingId: building.id }
+        }]
+      });
       
       const buildingData = building.toJSON();
       buildingData.roomCount = roomCount;
+      buildingData.studentCount = studentCount;
       return buildingData;
     })
   );
@@ -51,7 +62,7 @@ const getBuildingById = async (id) => {
 
 // Create building
 const createBuilding = async (buildingData) => {
-  const { name, address, latitude, longitude, floors } = buildingData;
+  const { name, address, mapUrl, floors } = buildingData;
 
   if (!name) {
     throw new Error('Building name is required');
@@ -60,8 +71,7 @@ const createBuilding = async (buildingData) => {
   const building = await Building.create({
     name,
     address: address || null,
-    latitude: latitude ? parseFloat(latitude) : null,
-    longitude: longitude ? parseFloat(longitude) : null,
+    mapUrl: mapUrl || null,
     floors: floors ? parseInt(floors) : null,
     roomCount: 0
   });
@@ -76,12 +86,11 @@ const updateBuilding = async (id, buildingData) => {
     throw new Error('Building not found');
   }
 
-  const { name, address, latitude, longitude, floors } = buildingData;
+  const { name, address, mapUrl, floors } = buildingData;
 
   if (name !== undefined) building.name = name;
   if (address !== undefined) building.address = address;
-  if (latitude !== undefined) building.latitude = latitude ? parseFloat(latitude) : null;
-  if (longitude !== undefined) building.longitude = longitude ? parseFloat(longitude) : null;
+  if (mapUrl !== undefined) building.mapUrl = mapUrl || null;
   if (floors !== undefined) building.floors = floors ? parseInt(floors) : null;
 
   await building.save();

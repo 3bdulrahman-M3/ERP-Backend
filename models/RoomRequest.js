@@ -53,3 +53,5 @@ const RoomRequest = sequelize.define('RoomRequest', {
 
 module.exports = RoomRequest;
 
+
+

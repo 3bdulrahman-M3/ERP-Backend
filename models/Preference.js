@@ -32,3 +32,5 @@ const Preference = sequelize.define('Preference', {
 
 module.exports = Preference;
 
+
+

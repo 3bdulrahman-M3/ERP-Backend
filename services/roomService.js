@@ -260,7 +260,7 @@ const getRoomById = async (id) => {
       {
         model: Building,
         as: 'buildingInfo',
-        attributes: ['id', 'name', 'address', 'latitude', 'longitude', 'floors'],
+        attributes: ['id', 'name', 'address', 'mapUrl', 'floors'],
         required: false
       },
       {
@@ -577,7 +577,34 @@ const getStudentRoom = async (studentId) => {
       isActive: true
     },
     include: [
-      { model: Room, as: 'room' },
+      { 
+        model: Room, 
+        as: 'room',
+        include: [
+          {
+            model: Building,
+            as: 'buildingInfo',
+            attributes: ['id', 'name', 'address', 'mapUrl', 'floors'],
+            required: false
+          },
+          {
+            model: RoomStudent,
+            as: 'roomStudents',
+            where: { isActive: true },
+            required: false,
+            include: [{
+              model: Student,
+              as: 'student',
+              attributes: ['id', 'name', 'email', 'profileImage'],
+              include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'name', 'email', 'profileImage']
+              }]
+            }]
+          }
+        ]
+      },
       { model: Student, as: 'student' }
     ]
   });
@@ -586,7 +613,18 @@ const getStudentRoom = async (studentId) => {
     return null;
   }
 
-  return assignment.toJSON();
+  const assignmentData = assignment.toJSON();
+  
+  // Get all roommates (excluding current student)
+  if (assignmentData.room && assignmentData.room.roomStudents) {
+    assignmentData.roommates = assignmentData.room.roomStudents
+      .filter(rs => rs.student && rs.student.id !== studentId)
+      .map(rs => rs.student);
+  } else {
+    assignmentData.roommates = [];
+  }
+
+  return assignmentData;
 };
 
 // Get room students (all students in a room)

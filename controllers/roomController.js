@@ -231,6 +231,44 @@ const getRoomStudents = async (req, res) => {
   }
 };
 
+// Get current student's room (for student role)
+const getMyRoom = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    // Find student by userId
+    const { Student } = require('../models');
+    const student = await Student.findOne({ where: { userId } });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
+    const room = await roomService.getStudentRoom(student.id);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student is not assigned to any room'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Student room retrieved successfully',
+      data: room
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   createRoom,
   getAllRooms,
@@ -240,6 +278,7 @@ module.exports = {
   assignStudent,
   checkOutStudent,
   getStudentRoom,
-  getRoomStudents
+  getRoomStudents,
+  getMyRoom
 };
 

@@ -18,12 +18,8 @@ const Building = sequelize.define('Building', {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  latitude: {
-    type: DataTypes.DECIMAL(11, 8),
-    allowNull: true
-  },
-  longitude: {
-    type: DataTypes.DECIMAL(12, 8),
+  mapUrl: {
+    type: DataTypes.TEXT,
     allowNull: true
   },
   floors: {

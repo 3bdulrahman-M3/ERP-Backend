@@ -4,8 +4,13 @@ const roomController = require('../controllers/roomController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const roleMiddleware = require('../middlewares/roleMiddleware');
 
-// All routes require authentication and admin role
+// All routes require authentication
 router.use(authMiddleware);
+
+// Student route (accessible by students)
+router.get('/my-room', roomController.getMyRoom);
+
+// Admin routes (require admin role)
 router.use(roleMiddleware('admin'));
 
 // CRUD operations

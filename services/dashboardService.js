@@ -1,6 +1,7 @@
-const { Student, RoomStudent, Room } = require('../models');
+const { Student, RoomStudent, Room, Sequelize } = require('../models');
 const mealService = require('./mealService');
 const checkInOutService = require('./checkInOutService');
+const { Op } = require('sequelize');
 
 // Get student dashboard data
 const getStudentDashboard = async (studentId) => {
@@ -90,7 +91,48 @@ const getStudentDashboard = async (studentId) => {
   };
 };
 
+// Get admin dashboard statistics
+const getAdminStatistics = async () => {
+  try {
+    // Count total students
+    const totalStudents = await Student.count();
+
+    // Count total rooms
+    const totalRooms = await Room.count();
+
+    // Count available rooms (rooms with availableBeds > 0 and status is available or reserved)
+    const availableRooms = await Room.count({
+      where: {
+        [Op.and]: [
+          { availableBeds: { [Op.gt]: 0 } },
+          { status: { [Op.in]: ['available', 'reserved'] } }
+        ]
+      }
+    });
+
+    // Count occupied rooms (rooms with availableBeds = 0 or status = 'occupied')
+    const occupiedRooms = await Room.count({
+      where: {
+        [Op.or]: [
+          { availableBeds: { [Op.eq]: 0 } },
+          { status: 'occupied' }
+        ]
+      }
+    });
+
+    return {
+      totalStudents,
+      totalRooms,
+      availableRooms,
+      occupiedRooms
+    };
+  } catch (error) {
+    throw new Error(`Failed to get admin statistics: ${error.message}`);
+  }
+};
+
 module.exports = {
-  getStudentDashboard
+  getStudentDashboard,
+  getAdminStatistics
 };
 

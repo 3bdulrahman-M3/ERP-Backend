@@ -14,3 +14,5 @@ router.put('/', roleMiddleware('student'), preferenceController.updatePreference
 
 module.exports = router;
 
+
+
