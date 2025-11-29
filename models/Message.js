@@ -29,10 +29,19 @@ const Message = sequelize.define('Message', {
   },
   content: {
     type: DataTypes.TEXT,
-    allowNull: false,
-    validate: {
-      notEmpty: true
-    }
+    allowNull: true
+  },
+  attachmentUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  attachmentType: {
+    type: DataTypes.ENUM('image', 'file'),
+    allowNull: true
+  },
+  attachmentName: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   isRead: {
     type: DataTypes.BOOLEAN,

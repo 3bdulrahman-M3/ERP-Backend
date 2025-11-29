@@ -132,7 +132,7 @@ const deleteRoom = async (req, res) => {
 // Assign student to room
 const assignStudent = async (req, res) => {
   try {
-    const { roomId, studentId, checkInDate, paid } = req.body;
+    const { roomId, studentId, checkInDate, payment } = req.body;
 
     if (!roomId || !studentId) {
       return res.status(400).json({
@@ -141,7 +141,7 @@ const assignStudent = async (req, res) => {
       });
     }
 
-    const assignment = await roomService.assignStudentToRoom(roomId, studentId, checkInDate, paid);
+    const assignment = await roomService.assignStudentToRoom(roomId, studentId, checkInDate, { payment });
 
     res.status(201).json({
       success: true,

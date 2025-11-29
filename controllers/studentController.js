@@ -146,12 +146,47 @@ const getStudentsByCollegeAndYear = async (req, res) => {
   }
 };
 
+// Complete student profile
+const completeStudentProfile = async (req, res) => {
+  try {
+    const userId = req.user.id; // From auth middleware
+    const { collegeId, year, age, phoneNumber } = req.body;
+
+    // Validation
+    if (!collegeId || !year) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرجاء إدخال الكلية والفرقة'
+      });
+    }
+
+    const student = await studentService.completeStudentProfile(userId, {
+      collegeId,
+      year,
+      age,
+      phoneNumber
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'تم استكمال بيانات الطالب بنجاح',
+      data: student
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'حدث خطأ أثناء استكمال بيانات الطالب'
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   getAllStudents,
   getStudentById,
   updateStudent,
   deleteStudent,
-  getStudentsByCollegeAndYear
+  getStudentsByCollegeAndYear,
+  completeStudentProfile
 };
 

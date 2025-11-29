@@ -37,10 +37,6 @@ const RoomStudent = sequelize.define('RoomStudent', {
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
-  },
-  paid: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
   }
 }, {
   tableName: 'room_students',

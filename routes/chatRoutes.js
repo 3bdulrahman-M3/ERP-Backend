@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const chatController = require('../controllers/chatController');
 const authMiddleware = require('../middlewares/authMiddleware');
+const chatUpload = require('../middlewares/chatUploadMiddleware');
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -18,8 +19,8 @@ router.get('/conversations/:id', chatController.getConversationById);
 // Get messages for a conversation
 router.get('/conversations/:id/messages', chatController.getMessages);
 
-// Send a message
-router.post('/messages', chatController.sendMessage);
+// Send a message (with optional file upload)
+router.post('/messages', chatUpload.single('attachment'), chatController.sendMessage);
 
 // Get unread message count
 router.get('/unread-count', chatController.getUnreadCount);

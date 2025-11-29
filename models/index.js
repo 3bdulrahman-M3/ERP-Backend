@@ -13,6 +13,8 @@ const Message = require('./Message');
 const Notification = require('./Notification');
 const Preference = require('./Preference');
 const RoomRequest = require('./RoomRequest');
+const Payment = require('./Payment');
+const RegistrationRequest = require('./RegistrationRequest');
 
 // Associations
 RefreshToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -73,6 +75,16 @@ Room.hasMany(RoomRequest, { foreignKey: 'roomId', as: 'requests' });
 RoomRequest.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
 Student.hasMany(RoomRequest, { foreignKey: 'studentId', as: 'roomRequests' });
 
+// Payment associations
+Payment.belongsTo(Room, { foreignKey: 'roomId', as: 'room' });
+Room.hasMany(Payment, { foreignKey: 'roomId', as: 'payments' });
+
+Payment.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
+Student.hasMany(Payment, { foreignKey: 'studentId', as: 'payments' });
+
+Payment.belongsTo(RoomStudent, { foreignKey: 'roomStudentId', as: 'assignment' });
+RoomStudent.hasMany(Payment, { foreignKey: 'roomStudentId', as: 'payments' });
+
 module.exports = {
   User,
   RefreshToken,
@@ -88,6 +100,8 @@ module.exports = {
   Message,
   Notification,
   Preference,
-  RoomRequest
+  RoomRequest,
+  Payment,
+  RegistrationRequest
 };
 

@@ -2,6 +2,7 @@ const { RoomRequest, Room, Student, User, Service, Building, RoomStudent, Prefer
 const { Op } = require('sequelize');
 const notificationService = require('./notificationService');
 const preferenceService = require('./preferenceService');
+const roomService = require('./roomService');
 
 // Create a room request
 const createRoomRequest = async (studentId, roomId, notes = null) => {
@@ -377,23 +378,7 @@ const acceptRoomRequest = async (requestId) => {
     }
   }
 
-  // Assign student to the new room
-  await RoomStudent.create({
-    roomId: request.roomId,
-    studentId: request.studentId,
-    checkInDate: new Date(),
-    isActive: true,
-    paid: false
-  });
-
-  // Update room available beds
-  request.room.availableBeds = (request.room.availableBeds || 0) - 1;
-  if (request.room.availableBeds === 0) {
-    request.room.status = 'occupied';
-  } else {
-    request.room.status = 'occupied';
-  }
-  await request.room.save();
+  await roomService.assignStudentToRoom(request.roomId, request.studentId, new Date(), { forceCheckout: true });
 
   // Update request status
   request.status = 'accepted';

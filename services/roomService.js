@@ -1,4 +1,64 @@
-const { Room, Student, RoomStudent, College, User, Service, Building, RoomRequest } = require('../models');
+const { Room, Student, RoomStudent, College, User, Service, Building, RoomRequest, Payment } = require('../models');
+const { calculatePaymentStatus } = require('./paymentService');
+
+const getDefaultAmountDue = (room) => {
+  if (!room) {
+    return 0;
+  }
+
+  if (room.roomType === 'single' && room.roomPrice) {
+    return Number(room.roomPrice);
+  }
+
+  if (room.roomType === 'shared' && room.bedPrice) {
+    return Number(room.bedPrice);
+  }
+
+  return Number(room.roomPrice || room.bedPrice || 0);
+};
+
+const createPaymentForAssignment = async (assignment, room, paymentDetails = {}) => {
+  const amountDue = paymentDetails.amountDue !== undefined
+    ? Number(paymentDetails.amountDue)
+    : getDefaultAmountDue(room);
+
+  const amountPaid = paymentDetails.amountPaid !== undefined
+    ? Number(paymentDetails.amountPaid)
+    : 0;
+
+  const remainingAmount = Math.max(amountDue - amountPaid, 0);
+  const status = paymentDetails.status || calculatePaymentStatus(amountDue, amountPaid);
+
+  return Payment.create({
+    roomId: assignment.roomId,
+    studentId: assignment.studentId,
+    roomStudentId: assignment.id,
+    amountDue,
+    amountPaid,
+    remainingAmount,
+    status,
+    paymentMethod: paymentDetails.paymentMethod || 'cash',
+    paymentDate: paymentDetails.paymentDate || new Date(),
+    notes: paymentDetails.notes || null
+  });
+};
+
+const checkOutAssignment = async (assignment, checkOutDate = new Date()) => {
+  assignment.isActive = false;
+  assignment.checkOutDate = checkOutDate;
+  await assignment.save();
+
+  const oldRoom = await Room.findByPk(assignment.roomId);
+  if (oldRoom) {
+    oldRoom.availableBeds = (oldRoom.availableBeds || 0) + 1;
+    if (oldRoom.availableBeds === oldRoom.totalBeds) {
+      oldRoom.status = 'available';
+    } else if (oldRoom.availableBeds > 0) {
+      oldRoom.status = 'occupied';
+    }
+    await oldRoom.save();
+  }
+};
 const { Op } = require('sequelize');
 const notificationService = require('./notificationService');
 const preferenceService = require('./preferenceService');
@@ -268,24 +328,30 @@ const getRoomById = async (id) => {
         as: 'roomStudents',
         where: { isActive: true },
         required: false,
-        include: [{
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
-          include: [
-            {
-              model: User,
-              as: 'user',
-              attributes: ['id', 'name', 'email', 'role']
-            },
-            {
-              model: College,
-              as: 'college',
-              attributes: ['id', 'name'],
-              required: false
-            }
-          ]
-        }]
+        include: [
+          {
+            model: Student,
+            as: 'student',
+            attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
+            include: [
+              {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'name', 'email', 'role']
+              },
+              {
+                model: College,
+                as: 'college',
+                attributes: ['id', 'name'],
+                required: false
+              }
+            ]
+          },
+          {
+            model: Payment,
+            as: 'payments'
+          }
+        ]
       },
       {
         model: RoomRequest,
@@ -320,6 +386,15 @@ const getRoomById = async (id) => {
 
   const roomData = room.toJSON();
   roomData.occupiedBeds = roomData.roomStudents ? roomData.roomStudents.length : 0;
+
+  if (roomData.roomStudents) {
+    roomData.roomStudents = roomData.roomStudents.map((studentAssignment) => {
+      const assignment = { ...studentAssignment };
+      assignment.payment = assignment.payments && assignment.payments.length > 0 ? assignment.payments[0] : null;
+      return assignment;
+    });
+  }
+
   return roomData;
 };
 
@@ -464,7 +539,9 @@ const deleteRoom = async (id) => {
 };
 
 // Assign student to room
-const assignStudentToRoom = async (roomId, studentId, checkInDate, paid = false) => {
+const assignStudentToRoom = async (roomId, studentId, checkInDate, options = {}) => {
+  const { payment: paymentDetails = {}, forceCheckout = false } = options || {};
+
   // Check if room exists
   const room = await Room.findByPk(roomId);
   if (!room) {
@@ -491,7 +568,11 @@ const assignStudentToRoom = async (roomId, studentId, checkInDate, paid = false)
   });
 
   if (existingAssignment) {
-    throw new Error('Student is already assigned to a room. Please check out first.');
+    if (!forceCheckout) {
+      throw new Error('Student is already assigned to a room. Please check out first.');
+    }
+
+    await checkOutAssignment(existingAssignment, checkInDate || new Date());
   }
 
   // Check if room status allows assignment
@@ -504,8 +585,7 @@ const assignStudentToRoom = async (roomId, studentId, checkInDate, paid = false)
     roomId,
     studentId,
     checkInDate: checkInDate || new Date(),
-    isActive: true,
-    paid: paid || false
+    isActive: true
   });
 
   // Update room available beds
@@ -517,22 +597,31 @@ const assignStudentToRoom = async (roomId, studentId, checkInDate, paid = false)
   }
   await room.save();
 
-  // Reload with relations
+  await createPaymentForAssignment(assignment, room, paymentDetails);
+
   await assignment.reload({
     include: [
       { model: Room, as: 'room' },
-      { 
-        model: Student, 
-        as: 'student', 
+      {
+        model: Student,
+        as: 'student',
         include: [
           { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
           { model: College, as: 'college', attributes: ['id', 'name'], required: false }
         ]
+      },
+      {
+        model: Payment,
+        as: 'payments'
       }
     ]
   });
 
-  return assignment.toJSON();
+  const assignmentData = assignment.toJSON();
+  assignmentData.payment = assignmentData.payments && assignmentData.payments.length > 0
+    ? assignmentData.payments[0]
+    : null;
+  return assignmentData;
 };
 
 // Check out student from room
@@ -592,20 +681,35 @@ const getStudentRoom = async (studentId) => {
             as: 'roomStudents',
             where: { isActive: true },
             required: false,
-            include: [{
-              model: Student,
-              as: 'student',
-              attributes: ['id', 'name', 'email', 'profileImage'],
-              include: [{
-                model: User,
-                as: 'user',
-                attributes: ['id', 'name', 'email', 'profileImage']
-              }]
-            }]
+            include: [
+              {
+                model: Student,
+                as: 'student',
+                attributes: ['id', 'name', 'email', 'profileImage', 'year'],
+                include: [
+                  {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'name', 'email', 'profileImage']
+                  },
+                  {
+                    model: College,
+                    as: 'college',
+                    attributes: ['id', 'name'],
+                    required: false
+                  }
+                ]
+              },
+              {
+                model: Payment,
+                as: 'payments'
+              }
+            ]
           }
         ]
       },
-      { model: Student, as: 'student' }
+      { model: Student, as: 'student' },
+      { model: Payment, as: 'payments' }
     ]
   });
 
@@ -614,12 +718,19 @@ const getStudentRoom = async (studentId) => {
   }
 
   const assignmentData = assignment.toJSON();
+  assignmentData.payment = assignmentData.payments && assignmentData.payments.length > 0
+    ? assignmentData.payments[0]
+    : null;
   
   // Get all roommates (excluding current student)
   if (assignmentData.room && assignmentData.room.roomStudents) {
     assignmentData.roommates = assignmentData.room.roomStudents
       .filter(rs => rs.student && rs.student.id !== studentId)
-      .map(rs => rs.student);
+      .map(rs => {
+        const roommate = { ...rs.student };
+        roommate.payment = rs.payments && rs.payments.length > 0 ? rs.payments[0] : null;
+        return roommate;
+      });
   } else {
     assignmentData.roommates = [];
   }
@@ -636,28 +747,38 @@ const getRoomStudents = async (roomId, includeInactive = false) => {
 
   const assignments = await RoomStudent.findAll({
     where,
-    include: [{
-      model: Student,
-      as: 'student',
-      attributes: ['id', 'name', 'email', 'age', 'phoneNumber', 'collegeId'],
-      include: [
-        {
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'role']
-        },
-        {
-          model: College,
-          as: 'college',
-          attributes: ['id', 'name'],
-          required: false
-        }
-      ]
-    }],
+    include: [
+      {
+        model: Student,
+        as: 'student',
+        attributes: ['id', 'name', 'email', 'age', 'phoneNumber', 'collegeId'],
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'email', 'role']
+          },
+          {
+            model: College,
+            as: 'college',
+            attributes: ['id', 'name'],
+            required: false
+          }
+        ]
+      },
+      {
+        model: Payment,
+        as: 'payments'
+      }
+    ],
     order: [['checkInDate', 'DESC']]
   });
 
-  return assignments.map(a => a.toJSON());
+  return assignments.map(assignment => {
+    const data = assignment.toJSON();
+    data.payment = data.payments && data.payments.length > 0 ? data.payments[0] : null;
+    return data;
+  });
 };
 
 module.exports = {

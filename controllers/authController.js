@@ -115,11 +115,53 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+const register = async (req, res, next) => {
+  try {
+    const { name, email, password, phoneNumber, college, year, age } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'الرجاء إدخال الاسم والبريد الإلكتروني وكلمة المرور'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
+      });
+    }
+
+    const result = await authService.register({
+      name,
+      email,
+      password,
+      phoneNumber,
+      college,
+      year,
+      age
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'تم التسجيل بنجاح',
+      data: result
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'حدث خطأ أثناء التسجيل'
+    });
+  }
+};
+
 module.exports = {
   login,
   refreshToken,
   logout,
   getProfile,
-  updateProfile
+  updateProfile,
+  register
 };
 

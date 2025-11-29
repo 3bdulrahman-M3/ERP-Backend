@@ -4,7 +4,10 @@ const studentController = require('../controllers/studentController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const roleMiddleware = require('../middlewares/roleMiddleware');
 
-// All routes require authentication and admin role
+// Public route for completing profile (requires auth but not admin)
+router.post('/complete-profile', authMiddleware, studentController.completeStudentProfile);
+
+// All other routes require authentication and admin role
 router.use(authMiddleware);
 router.use(roleMiddleware('admin'));
 

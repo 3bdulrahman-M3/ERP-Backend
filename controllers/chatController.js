@@ -135,14 +135,43 @@ const sendMessage = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    if (!conversationId || !content) {
+    if (!conversationId) {
       return res.status(400).json({
         success: false,
-        message: 'Conversation ID and content are required'
+        message: 'Conversation ID is required'
       });
     }
 
-    const message = await chatService.sendMessage(conversationId, userId, userRole, content);
+    // Check if file is uploaded
+    let attachmentUrl = null;
+    let attachmentType = null;
+    let attachmentName = null;
+
+    if (req.file) {
+      const fileUrl = `/uploads/chat/${req.file.filename}`;
+      const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+      attachmentUrl = fullUrl;
+      attachmentName = req.file.originalname;
+      
+      // Determine attachment type
+      const imageTypes = /jpeg|jpg|png|gif|webp/;
+      const ext = req.file.originalname.split('.').pop().toLowerCase();
+      attachmentType = imageTypes.test(ext) ? 'image' : 'file';
+    }
+
+    // Normalize content: if empty string, convert to null
+    const normalizedContent = (content && content.trim()) ? content.trim() : null;
+    
+    const message = await chatService.sendMessage(
+      conversationId, 
+      userId, 
+      userRole, 
+      normalizedContent, 
+      attachmentUrl, 
+      attachmentType, 
+      attachmentName
+    );
+    
     res.status(201).json({
       success: true,
       data: message

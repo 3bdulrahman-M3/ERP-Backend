@@ -206,6 +206,39 @@ const getProfile = async (userId) => {
   return user.toJSON();
 };
 
+// Register new student - Create User only, Student will be created later
+const register = async (registerData) => {
+  const { name, email, password } = registerData;
+
+  // Check if email already exists
+  const existingUser = await User.findOne({ where: { email } });
+  if (existingUser) {
+    throw new Error('البريد الإلكتروني مستخدم بالفعل');
+  }
+
+  // Create user only (password will be hashed automatically by User model hook)
+  const user = await User.create({
+    name,
+    email,
+    password: password, // User model will hash it automatically
+    role: 'student',
+    isActive: true
+  });
+
+  // Generate tokens for immediate login
+  const accessToken = generateAccessToken(user.id, user.role);
+  const refreshToken = generateRefreshToken();
+
+  // Save refresh token
+  await saveRefreshToken(user.id, refreshToken);
+
+  return {
+    accessToken,
+    refreshToken,
+    user: user.toJSON()
+  };
+};
+
 module.exports = {
   login,
   refreshAccessToken,
@@ -213,5 +246,6 @@ module.exports = {
   revokeAllUserTokens,
   generateAccessToken,
   updateProfile,
-  getProfile
+  getProfile,
+  register
 };

@@ -16,6 +16,8 @@ const chatRoutes = require('./routes/chatRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const preferenceRoutes = require('./routes/preferenceRoutes');
 const roomRequestRoutes = require('./routes/roomRequestRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const registrationRequestRoutes = require('./routes/registrationRequestRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 const path = require('path');
 
@@ -80,6 +82,8 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/preferences', preferenceRoutes);
 app.use('/api/room-requests', roomRequestRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/registration-requests', registrationRequestRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

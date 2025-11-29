@@ -111,8 +111,10 @@ const getConversationById = async (conversationId, userId, userRole) => {
 
 // Get all conversations (for admin) or student's conversation
 const getAllConversations = async (userId, userRole) => {
+  let conversations;
+  
   if (userRole === 'admin') {
-    return await Conversation.findAll({
+    conversations = await Conversation.findAll({
       include: [
         {
           model: Student,
@@ -139,7 +141,7 @@ const getAllConversations = async (userId, userRole) => {
       return [];
     }
 
-    return await Conversation.findAll({
+    conversations = await Conversation.findAll({
       where: { studentId: student.id },
       include: [
         {
@@ -161,6 +163,28 @@ const getAllConversations = async (userId, userRole) => {
       order: [['lastMessageAt', 'DESC NULLS LAST'], ['createdAt', 'DESC']]
     });
   }
+
+  // Get last message for each conversation
+  const conversationsWithLastMessage = await Promise.all(
+    conversations.map(async (conversation) => {
+      const lastMessage = await Message.findOne({
+        where: { conversationId: conversation.id },
+        order: [['createdAt', 'DESC']],
+        attributes: ['content']
+      });
+
+      const conversationData = conversation.toJSON();
+      if (lastMessage) {
+        conversationData.lastMessage = lastMessage.content;
+      } else {
+        conversationData.lastMessage = null;
+      }
+
+      return conversationData;
+    })
+  );
+
+  return conversationsWithLastMessage;
 };
 
 // Get messages for a conversation
@@ -233,9 +257,13 @@ const getMessages = async (conversationId, userId, userRole, page = 1, limit = 5
 };
 
 // Send a message
-const sendMessage = async (conversationId, senderId, senderRole, content) => {
-  if (!content || !content.trim()) {
-    throw new Error('Message content is required');
+const sendMessage = async (conversationId, senderId, senderRole, content, attachmentUrl = null, attachmentType = null, attachmentName = null) => {
+  // Validate: must have content or attachment
+  const hasContent = content && content.trim();
+  const hasAttachment = attachmentUrl;
+  
+  if (!hasContent && !hasAttachment) {
+    throw new Error('Message content or attachment is required');
   }
 
   const conversation = await Conversation.findByPk(conversationId);
@@ -255,7 +283,10 @@ const sendMessage = async (conversationId, senderId, senderRole, content) => {
     conversationId,
     senderId,
     senderRole,
-    content: content.trim(),
+    content: hasContent ? content.trim() : null,
+    attachmentUrl,
+    attachmentType,
+    attachmentName,
     isRead: false
   });
 

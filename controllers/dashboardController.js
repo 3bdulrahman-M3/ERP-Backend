@@ -1,5 +1,24 @@
 const dashboardService = require('../services/dashboardService');
 
+// Check if student profile exists
+const checkStudentProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { Student } = require('../models');
+    const student = await Student.findOne({ where: { userId } });
+
+    res.json({
+      success: true,
+      hasProfile: !!student
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // Get student dashboard
 const getStudentDashboard = async (req, res) => {
   try {
@@ -51,6 +70,7 @@ const getAdminStatistics = async (req, res) => {
 };
 
 module.exports = {
+  checkStudentProfile,
   getStudentDashboard,
   getAdminStatistics
 };

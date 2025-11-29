@@ -23,7 +23,7 @@ const runMigrations = async () => {
                       file !== 'runMigrations.js' && 
                       file !== 'undoLastMigration.js' &&
                       file !== 'fix-category-enum.js' &&
-                      file.startsWith('2024')) // Only files starting with year (proper migrations)
+                      (file.startsWith('2024') || file.startsWith('2025'))) // Only files starting with year (proper migrations)
       .sort();
 
     // Get executed migrations

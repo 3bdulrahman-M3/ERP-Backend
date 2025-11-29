@@ -323,13 +323,80 @@ const getStudentsByCollegeAndYear = async (collegeId, year, page = 1, limit = 10
   };
 };
 
+// Complete student profile (for users who registered but didn't complete profile)
+const completeStudentProfile = async (userId, studentData) => {
+  const { collegeId, year, age, phoneNumber } = studentData;
+
+  // Check if user exists
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new Error('المستخدم غير موجود');
+  }
+
+  if (user.role !== 'student') {
+    throw new Error('هذا المستخدم ليس طالباً');
+  }
+
+  // Check if student already exists
+  const existingStudent = await Student.findOne({ where: { userId } });
+  if (existingStudent) {
+    throw new Error('بيانات الطالب موجودة بالفعل');
+  }
+
+  // Generate QR code
+  const qrCode = await generateQRCode(user.id, user.name, user.email);
+
+  // Create student
+  const student = await Student.create({
+    name: user.name,
+    email: user.email,
+    collegeId: collegeId || null,
+    year: year || null,
+    age: age || null,
+    phoneNumber: phoneNumber || null,
+    qrCode,
+    userId: user.id
+  });
+
+  // Reload with relations
+  await student.reload({ 
+    include: [
+      { model: User, as: 'user' },
+      { model: College, as: 'college' }
+    ] 
+  });
+
+  // Remove password from user in response
+  const studentResponse = student.toJSON();
+  if (studentResponse.user) {
+    delete studentResponse.user.password;
+  }
+
+  // Create notification for admins
+  try {
+    await notificationService.createNotificationForAdmins(
+      'student_created',
+      'طالب جديد',
+      `تم إضافة طالب جديد: ${user.name}`,
+      student.id,
+      'student'
+    );
+  } catch (error) {
+    console.error('Error creating notification:', error);
+  }
+
+  return studentResponse;
+};
+
 module.exports = {
+  generateQRCode,
   createStudent,
   getAllStudents,
   getStudentById,
   updateStudent,
   deleteStudent,
   getStudentByEmail,
-  getStudentsByCollegeAndYear
+  getStudentsByCollegeAndYear,
+  completeStudentProfile
 };
 
