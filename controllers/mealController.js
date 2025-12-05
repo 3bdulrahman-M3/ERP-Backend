@@ -41,7 +41,7 @@ const getMealById = async (req, res) => {
 // Create meal
 const createMeal = async (req, res) => {
   try {
-    const { name, startTime, endTime, isActive, category } = req.body;
+    const { name, startTime, endTime, isActive, category, image } = req.body;
 
     if (!name || !startTime || !endTime) {
       return res.status(400).json({
@@ -50,7 +50,7 @@ const createMeal = async (req, res) => {
       });
     }
 
-    const meal = await mealService.createMeal({ name, startTime, endTime, isActive, category });
+    const meal = await mealService.createMeal({ name, startTime, endTime, isActive, category, image });
 
     res.status(201).json({
       success: true,

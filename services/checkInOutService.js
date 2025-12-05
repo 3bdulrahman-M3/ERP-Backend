@@ -78,8 +78,8 @@ const checkInStudent = async (studentId, notes = null) => {
       await notificationService.createNotification(
         student.user.id,
         'check_in',
-        'تم تسجيل الدخول',
-        `تم تسجيل دخولك بنجاح في ${new Date().toLocaleString('ar-EG')}`,
+        'Checked In',
+        `You have successfully checked in at ${new Date().toLocaleString('en-US')}`,
         checkIn.id,
         'check_in_out'
       );
@@ -92,8 +92,8 @@ const checkInStudent = async (studentId, notes = null) => {
   try {
     await notificationService.createNotificationForAdmins(
       'student_check_in',
-      'تسجيل دخول طالب',
-      `قام الطالب ${student.name} (${student.email}) بتسجيل الدخول`,
+      'Student Check-in',
+      `Student ${student.name} (${student.email}) has checked in`,
       checkIn.id,
       'check_in_out'
     );
@@ -158,8 +158,8 @@ const checkOutStudent = async (studentId, notes = null) => {
       await notificationService.createNotification(
         student.user.id,
         'check_out',
-        'تم تسجيل الخروج',
-        `تم تسجيل خروجك بنجاح في ${new Date().toLocaleString('ar-EG')}`,
+        'Checked Out',
+        `You have successfully checked out at ${new Date().toLocaleString('en-US')}`,
         checkIn.id,
         'check_in_out'
       );
@@ -172,8 +172,8 @@ const checkOutStudent = async (studentId, notes = null) => {
   try {
     await notificationService.createNotificationForAdmins(
       'student_check_out',
-      'تسجيل خروج طالب',
-      `تم تسجيل خروج الطالب ${student.user?.name || student.name}`,
+      'Student Check-out',
+      `Student ${student.user?.name || student.name} has checked out`,
       studentId,
       'student'
     );

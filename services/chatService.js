@@ -322,8 +322,8 @@ const sendMessage = async (conversationId, senderId, senderRole, content, attach
         await notificationService.createNotification(
           student.user.id,
           'new_message',
-          'رسالة جديدة',
-          `لديك رسالة جديدة من الإدارة`,
+          'New Message',
+          `You have a new message from the administration`,
           conversation.id,
           'conversation'
         );
@@ -334,8 +334,8 @@ const sendMessage = async (conversationId, senderId, senderRole, content, attach
         await notificationService.createNotification(
           conversation.adminId,
           'new_message',
-          'رسالة جديدة من طالب',
-          `لديك رسالة جديدة من ${message.sender.name}`,
+          'New Message from Student',
+          `You have a new message from ${message.sender.name}`,
           conversation.id,
           'conversation'
         );
@@ -343,8 +343,8 @@ const sendMessage = async (conversationId, senderId, senderRole, content, attach
         // No admin assigned, notify all admins
         await notificationService.createNotificationForAdmins(
           'new_message',
-          'رسالة جديدة من طالب',
-          `لديك رسالة جديدة من طالب`,
+          'New Message from Student',
+          `You have a new message from a student`,
           conversation.id,
           'conversation'
         );

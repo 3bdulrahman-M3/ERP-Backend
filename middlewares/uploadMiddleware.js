@@ -2,7 +2,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// إنشاء مجلد uploads إذا لم يكن موجوداً
+// Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -11,17 +11,17 @@ if (!fs.existsSync(uploadsDir)) {
   console.log('✅ Uploads directory exists:', uploadsDir);
 }
 
-// إعداد multer لحفظ الملفات
+// Configure multer to save files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // التأكد من وجود المجلد
+    // Ensure the directory exists
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    // إنشاء اسم فريد للملف
+    // Create a unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     const filename = file.fieldname + '-' + uniqueSuffix + ext;
@@ -30,7 +30,7 @@ const storage = multer.diskStorage({
   }
 });
 
-// فلترة الملفات (الصور فقط)
+// Filter files (images only)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -39,7 +39,7 @@ const fileFilter = (req, file, cb) => {
   if (mimetype && extname) {
     return cb(null, true);
   } else {
-    cb(new Error('يُسمح فقط بملفات الصور (JPEG, JPG, PNG, GIF, WEBP)'));
+    cb(new Error('Only image files (JPEG, JPG, PNG, GIF, WEBP) are allowed'));
   }
 };
 

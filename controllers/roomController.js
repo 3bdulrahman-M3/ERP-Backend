@@ -3,7 +3,7 @@ const roomService = require('../services/roomService');
 // Create room
 const createRoom = async (req, res) => {
   try {
-    const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = req.body;
+    const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds, images } = req.body;
 
     if (!totalBeds) {
       return res.status(400).json({
@@ -22,7 +22,8 @@ const createRoom = async (req, res) => {
       roomType,
       roomPrice,
       bedPrice,
-      serviceIds
+      serviceIds,
+      images
     });
 
     res.status(201).json({

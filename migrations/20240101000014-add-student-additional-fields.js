@@ -5,31 +5,31 @@ module.exports = {
     await queryInterface.addColumn('students', 'profileImage', {
       type: Sequelize.TEXT,
       allowNull: true,
-      comment: 'صورة شخصية للطالب'
+      comment: 'Student profile image'
     });
 
     await queryInterface.addColumn('students', 'governorate', {
       type: Sequelize.STRING,
       allowNull: true,
-      comment: 'المحافظة'
+      comment: 'Governorate'
     });
 
     await queryInterface.addColumn('students', 'address', {
       type: Sequelize.TEXT,
       allowNull: true,
-      comment: 'العنوان'
+      comment: 'Address'
     });
 
     await queryInterface.addColumn('students', 'guardianPhone', {
       type: Sequelize.STRING,
       allowNull: true,
-      comment: 'رقم ولي الأمر'
+      comment: 'Guardian phone number'
     });
 
     await queryInterface.addColumn('students', 'idCardImage', {
       type: Sequelize.TEXT,
       allowNull: true,
-      comment: 'صورة البطاقة الشخصية'
+      comment: 'ID card image'
     });
   },
 

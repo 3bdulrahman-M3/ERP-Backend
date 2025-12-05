@@ -36,6 +36,11 @@ const Building = sequelize.define('Building', {
     validate: {
       min: 0
     }
+  },
+  image: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Building image URL'
   }
 }, {
   tableName: 'buildings',

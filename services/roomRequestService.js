@@ -101,8 +101,8 @@ const createRoomRequest = async (studentId, roomId, notes = null) => {
   try {
     await notificationService.createNotificationForAdmins(
       'room_request',
-      'طلب غرفة جديد',
-      `الطالب ${student.name} قدم طلب للغرفة ${room.roomNumber}`,
+      'New Room Request',
+      `Student ${student.name} has requested room ${room.roomNumber}`,
       room.id, // Use roomId instead of request.id for navigation
       'room'
     );
@@ -401,8 +401,8 @@ const acceptRoomRequest = async (requestId) => {
     await notificationService.createNotification(
       request.student.userId,
       'room_request_accepted',
-      'تم قبول طلب الغرفة',
-      `تم قبول طلبك للغرفة ${request.room.roomNumber}`,
+      'Room Request Approved',
+      `Your request for room ${request.room.roomNumber} has been approved`,
       request.roomId,
       'room'
     );
@@ -452,8 +452,8 @@ const rejectRoomRequest = async (requestId) => {
     await notificationService.createNotification(
       request.student.userId,
       'room_request_rejected',
-      'تم رفض طلب الغرفة',
-      `تم رفض طلبك للغرفة ${request.room.roomNumber}`,
+      'Room Request Rejected',
+      `Your request for room ${request.room.roomNumber} has been rejected`,
       request.roomId,
       'room'
     );

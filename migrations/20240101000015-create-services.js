@@ -20,7 +20,7 @@ module.exports = {
       icon: {
         type: DataTypes.STRING,
         allowNull: true,
-        comment: 'أيقونة الخدمة (مثل: wifi, ac, tv)'
+        comment: 'Service icon (e.g., wifi, ac, tv)'
       },
       createdAt: {
         type: DataTypes.DATE,

@@ -65,7 +65,7 @@ const getMealById = async (id) => {
 
 // Create meal
 const createMeal = async (mealData) => {
-  const { name, startTime, endTime, isActive, category } = mealData;
+  const { name, startTime, endTime, isActive, category, image } = mealData;
 
   // Validate time format
   if (!startTime || !endTime) {
@@ -88,15 +88,16 @@ const createMeal = async (mealData) => {
     startTime,
     endTime,
     isActive: isActive !== undefined ? isActive : true,
-    category: category || null
+    category: category || null,
+    image: image || null
   });
 
   // Create notification for admins
   try {
     await notificationService.createNotificationForAdmins(
       'meal_created',
-      'وجبة جديدة',
-      `تم إضافة وجبة جديدة: ${name}`,
+      'New Meal',
+      `A new meal has been added: ${name}`,
       meal.id,
       'meal'
     );
@@ -114,7 +115,7 @@ const updateMeal = async (id, mealData) => {
     throw new Error('Meal not found');
   }
 
-  const { name, startTime, endTime, isActive, category } = mealData;
+  const { name, startTime, endTime, isActive, category, image } = mealData;
 
   if (name && name !== meal.name) {
     const existingMeal = await Meal.findOne({ where: { name } });
@@ -128,6 +129,7 @@ const updateMeal = async (id, mealData) => {
   if (endTime) meal.endTime = endTime;
   if (isActive !== undefined) meal.isActive = isActive;
   if (category !== undefined) meal.category = category;
+  if (image !== undefined) meal.image = image || null;
 
   // Validate that end time is after start time
   if (meal.startTime && meal.endTime && compareTime(meal.endTime, meal.startTime) <= 0) {
@@ -242,14 +244,14 @@ const getKitchenStatus = async () => {
 
       if (currentStatus.isOpen) {
         // Kitchen just opened
-        const mealName = currentMeal ? currentMeal.name : 'وجبة';
+        const mealName = currentMeal ? currentMeal.name : 'Meal';
         await Promise.all(
           userIds.map(userId =>
             notificationService.createNotification(
               userId,
               'kitchen_opened',
-              'المطبخ مفتوح الآن',
-              `تم فتح المطبخ! الوجبة الحالية: ${mealName}`,
+              'Kitchen is Now Open',
+              `Kitchen has been opened! Current meal: ${mealName}`,
               currentMeal ? currentMeal.id : null,
               'meal'
             )
@@ -262,8 +264,8 @@ const getKitchenStatus = async () => {
             notificationService.createNotification(
               userId,
               'kitchen_closed',
-              'المطبخ مغلق الآن',
-              `تم إغلاق المطبخ. ${nextMeal ? `الوجبة القادمة: ${nextMeal.name}` : 'لا توجد وجبات قادمة'}`,
+              'Kitchen is Now Closed',
+              `Kitchen has been closed. ${nextMeal ? `Next meal: ${nextMeal.name}` : 'No upcoming meals'}`,
               null,
               'meal'
             )
@@ -285,15 +287,15 @@ const getKitchenStatus = async () => {
       });
 
       const userIds = allUsers.map(u => u.id);
-      const mealName = currentMeal ? currentMeal.name : 'وجبة';
+      const mealName = currentMeal ? currentMeal.name : 'Meal';
 
       await Promise.all(
         userIds.map(userId =>
           notificationService.createNotification(
             userId,
             'meal_changed',
-            'تغيير الوجبة',
-            `الوجبة الحالية الآن: ${mealName}`,
+            'Meal Changed',
+            `Current meal now: ${mealName}`,
             currentMeal ? currentMeal.id : null,
             'meal'
           )

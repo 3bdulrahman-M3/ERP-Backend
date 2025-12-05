@@ -2,7 +2,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// إنشاء مجلد uploads/chat إذا لم يكن موجوداً
+// Create uploads/chat directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../uploads/chat');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -11,7 +11,7 @@ if (!fs.existsSync(uploadsDir)) {
   console.log('✅ Chat uploads directory exists:', uploadsDir);
 }
 
-// إعداد multer لحفظ الملفات
+// Configure multer to save files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     if (!fs.existsSync(uploadsDir)) {
@@ -27,11 +27,11 @@ const storage = multer.diskStorage({
   }
 });
 
-// فلترة الملفات (الصور والملفات العامة)
+// Filter files (images and general files)
 const fileFilter = (req, file, cb) => {
-  // الصور
+  // Images
   const imageTypes = /jpeg|jpg|png|gif|webp/;
-  // الملفات العامة (PDF, DOC, DOCX, TXT, etc.)
+  // General files (PDF, DOC, DOCX, TXT, etc.)
   const fileTypes = /pdf|doc|docx|txt|xls|xlsx|zip|rar/;
   
   const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
@@ -41,7 +41,7 @@ const fileFilter = (req, file, cb) => {
   if (isImage || isFile) {
     return cb(null, true);
   } else {
-    cb(new Error('نوع الملف غير مدعوم. يُسمح بالصور والملفات (PDF, DOC, DOCX, TXT, XLS, XLSX, ZIP, RAR)'));
+    cb(new Error('File type not supported. Only images and files (PDF, DOC, DOCX, TXT, XLS, XLSX, ZIP, RAR) are allowed'));
   }
 };
 

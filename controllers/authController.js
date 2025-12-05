@@ -122,14 +122,14 @@ const register = async (req, res, next) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'الرجاء إدخال الاسم والبريد الإلكتروني وكلمة المرور'
+        message: 'Please enter name, email, and password'
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
+        message: 'Password must be at least 6 characters'
       });
     }
 
@@ -145,13 +145,13 @@ const register = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'تم التسجيل بنجاح',
+      message: 'Registration successful',
       data: result
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء التسجيل'
+      message: error.message || 'An error occurred during registration'
     });
   }
 };

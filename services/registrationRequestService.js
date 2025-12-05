@@ -24,13 +24,13 @@ const createRequest = async (requestData) => {
   // Check if email already exists in users
   const existingUser = await User.findOne({ where: { email } });
   if (existingUser) {
-    throw new Error('البريد الإلكتروني مستخدم بالفعل');
+    throw new Error('Email is already in use');
   }
 
   // Check if email already exists in pending requests
   const existingRequest = await RegistrationRequest.findOne({ where: { email } });
   if (existingRequest) {
-    throw new Error('يوجد طلب تسجيل معلق بهذا البريد الإلكتروني');
+    throw new Error('There is a pending registration request with this email');
   }
 
   const request = await RegistrationRequest.create({
@@ -67,17 +67,17 @@ const getAllRequests = async (status = null) => {
 const approveRequest = async (requestId) => {
   const request = await RegistrationRequest.findByPk(requestId);
   if (!request) {
-    throw new Error('طلب التسجيل غير موجود');
+    throw new Error('Registration request not found');
   }
 
   if (request.status !== 'pending') {
-    throw new Error('تم معالجة هذا الطلب مسبقاً');
+    throw new Error('This request has already been processed');
   }
 
   // Check if email still available
   const existingUser = await User.findOne({ where: { email: request.email } });
   if (existingUser) {
-    throw new Error('البريد الإلكتروني مستخدم بالفعل');
+    throw new Error('Email is already in use');
   }
 
   // Create user - Note: User model will hash the password again, but since it's already hashed,
@@ -131,11 +131,11 @@ const approveRequest = async (requestId) => {
 const rejectRequest = async (requestId) => {
   const request = await RegistrationRequest.findByPk(requestId);
   if (!request) {
-    throw new Error('طلب التسجيل غير موجود');
+    throw new Error('Registration request not found');
   }
 
   if (request.status !== 'pending') {
-    throw new Error('تم معالجة هذا الطلب مسبقاً');
+    throw new Error('This request has already been processed');
   }
 
   request.status = 'rejected';
@@ -160,20 +160,20 @@ const sendApprovalEmail = async (email, name) => {
     await transporter.sendMail({
       from: process.env.SMTP_USER,
       to: email,
-      subject: 'تم قبول طلب التسجيل - نظام إدارة السكن الجامعي',
+      subject: 'Registration Request Approved - University Housing Management System',
       html: `
-        <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right;">
-          <h2 style="color: #1f2937;">مرحباً ${name}</h2>
-          <p>نود إعلامك بأن طلب التسجيل الخاص بك في نظام إدارة السكن الجامعي قد تم قبوله.</p>
-          <p>يمكنك الآن تسجيل الدخول باستخدام البريد الإلكتروني وكلمة المرور التي قمت بإدخالهما في الطلب.</p>
+        <div style="font-family: Arial, sans-serif; direction: ltr; text-align: left;">
+          <h2 style="color: #1f2937;">Hello ${name}</h2>
+          <p>We are pleased to inform you that your registration request for the University Housing Management System has been approved.</p>
+          <p>You can now log in using the email and password you entered in the request.</p>
           <p style="margin-top: 20px;">
             <a href="${process.env.FRONTEND_URL || 'http://localhost:4200'}/login" 
                style="background-color: #1f2937; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
-              تسجيل الدخول
+              Login
             </a>
           </p>
           <p style="margin-top: 20px; color: #6b7280; font-size: 12px;">
-            شكراً لاستخدامك نظام إدارة السكن الجامعي
+            Thank you for using the University Housing Management System
           </p>
         </div>
       `
@@ -198,14 +198,14 @@ const sendRejectionEmail = async (email, name) => {
     await transporter.sendMail({
       from: process.env.SMTP_USER,
       to: email,
-      subject: 'تم رفض طلب التسجيل - نظام إدارة السكن الجامعي',
+      subject: 'Registration Request Rejected - University Housing Management System',
       html: `
-        <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right;">
-          <h2 style="color: #1f2937;">مرحباً ${name}</h2>
-          <p>نأسف لإعلامك بأن طلب التسجيل الخاص بك في نظام إدارة السكن الجامعي قد تم رفضه.</p>
-          <p>إذا كان لديك أي استفسارات، يرجى التواصل مع الإدارة.</p>
+        <div style="font-family: Arial, sans-serif; direction: ltr; text-align: left;">
+          <h2 style="color: #1f2937;">Hello ${name}</h2>
+          <p>We regret to inform you that your registration request for the University Housing Management System has been rejected.</p>
+          <p>If you have any inquiries, please contact the administration.</p>
           <p style="margin-top: 20px; color: #6b7280; font-size: 12px;">
-            شكراً لاهتمامك بنظام إدارة السكن الجامعي
+            Thank you for your interest in the University Housing Management System
           </p>
         </div>
       `

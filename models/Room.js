@@ -72,6 +72,12 @@ const Room = sequelize.define('Room', {
   description: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  images: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+    comment: 'Array of image URLs for the room'
   }
 }, {
   tableName: 'rooms',

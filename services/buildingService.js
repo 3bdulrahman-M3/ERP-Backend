@@ -62,7 +62,7 @@ const getBuildingById = async (id) => {
 
 // Create building
 const createBuilding = async (buildingData) => {
-  const { name, address, mapUrl, floors } = buildingData;
+  const { name, address, mapUrl, floors, image } = buildingData;
 
   if (!name) {
     throw new Error('Building name is required');
@@ -73,6 +73,7 @@ const createBuilding = async (buildingData) => {
     address: address || null,
     mapUrl: mapUrl || null,
     floors: floors ? parseInt(floors) : null,
+    image: image || null,
     roomCount: 0
   });
 
@@ -86,12 +87,13 @@ const updateBuilding = async (id, buildingData) => {
     throw new Error('Building not found');
   }
 
-  const { name, address, mapUrl, floors } = buildingData;
+  const { name, address, mapUrl, floors, image } = buildingData;
 
   if (name !== undefined) building.name = name;
   if (address !== undefined) building.address = address;
   if (mapUrl !== undefined) building.mapUrl = mapUrl || null;
   if (floors !== undefined) building.floors = floors ? parseInt(floors) : null;
+  if (image !== undefined) building.image = image || null;
 
   await building.save();
   return building;

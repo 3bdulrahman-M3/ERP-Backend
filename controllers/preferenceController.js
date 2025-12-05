@@ -31,7 +31,7 @@ const updatePreferences = async (req, res) => {
     
     res.json({
       success: true,
-      message: 'تم تحديث التفضيلات بنجاح',
+      message: 'Preferences updated successfully',
       data: preferences
     });
   } catch (error) {

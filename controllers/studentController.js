@@ -156,7 +156,7 @@ const completeStudentProfile = async (req, res) => {
     if (!collegeId || !year) {
       return res.status(400).json({
         success: false,
-        message: 'الرجاء إدخال الكلية والفرقة'
+        message: 'Please enter college and year'
       });
     }
 
@@ -169,13 +169,13 @@ const completeStudentProfile = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'تم استكمال بيانات الطالب بنجاح',
+      message: 'Student profile completed successfully',
       data: student
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء استكمال بيانات الطالب'
+      message: error.message || 'An error occurred while completing student profile'
     });
   }
 };

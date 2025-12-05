@@ -12,7 +12,7 @@ const uploadImage = async (req, res) => {
       console.error('No file in request');
       return res.status(400).json({
         success: false,
-        message: 'لم يتم رفع أي ملف. تأكد من أن اسم الحقل هو "image"'
+        message: 'No file uploaded. Make sure the field name is "image"'
       });
     }
 
@@ -24,7 +24,7 @@ const uploadImage = async (req, res) => {
       path: req.file.path
     });
 
-    // التحقق من أن الملف تم حفظه
+    // Verify that the file was saved
     const fs = require('fs');
     const filePath = require('path').join(__dirname, '../uploads', req.file.filename);
     
@@ -34,7 +34,7 @@ const uploadImage = async (req, res) => {
       console.error('File was not saved:', filePath);
       return res.status(500).json({
         success: false,
-        message: 'فشل حفظ الملف'
+        message: 'Failed to save file'
       });
     }
 
@@ -56,7 +56,7 @@ const uploadImage = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'تم رفع الصورة بنجاح',
+      message: 'Image uploaded successfully',
       data: {
         filename: req.file.filename,
         originalName: req.file.originalname,
@@ -69,7 +69,7 @@ const uploadImage = async (req, res) => {
     console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'حدث خطأ أثناء رفع الصورة',
+      message: 'An error occurred while uploading the image',
       error: error.message
     });
   }
@@ -84,19 +84,19 @@ const deleteImage = async (req, res) => {
       fs.unlinkSync(filePath);
       res.json({
         success: true,
-        message: 'تم حذف الصورة بنجاح'
+        message: 'Image deleted successfully'
       });
     } else {
       res.status(404).json({
         success: false,
-        message: 'الصورة غير موجودة'
+        message: 'Image not found'
       });
     }
   } catch (error) {
     console.error('Error deleting image:', error);
     res.status(500).json({
       success: false,
-      message: 'حدث خطأ أثناء حذف الصورة',
+      message: 'An error occurred while deleting the image',
       error: error.message
     });
   }

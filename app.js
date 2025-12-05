@@ -18,6 +18,7 @@ const preferenceRoutes = require('./routes/preferenceRoutes');
 const roomRequestRoutes = require('./routes/roomRequestRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const registrationRequestRoutes = require('./routes/registrationRequestRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
 const responseHandler = require('./middlewares/responseHandler');
 const path = require('path');
 
@@ -29,7 +30,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files - يجب أن يكون قبل responseHandler
+// Serve uploaded files - Must be before responseHandler
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use(responseHandler);
@@ -84,6 +85,7 @@ app.use('/api/preferences', preferenceRoutes);
 app.use('/api/room-requests', roomRequestRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/registration-requests', registrationRequestRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

@@ -213,7 +213,7 @@ const register = async (registerData) => {
   // Check if email already exists
   const existingUser = await User.findOne({ where: { email } });
   if (existingUser) {
-    throw new Error('البريد الإلكتروني مستخدم بالفعل');
+    throw new Error('Email is already in use');
   }
 
   // Create user only (password will be hashed automatically by User model hook)

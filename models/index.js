@@ -15,6 +15,7 @@ const Preference = require('./Preference');
 const RoomRequest = require('./RoomRequest');
 const Payment = require('./Payment');
 const RegistrationRequest = require('./RegistrationRequest');
+const Review = require('./Review');
 
 // Associations
 RefreshToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -85,6 +86,10 @@ Student.hasMany(Payment, { foreignKey: 'studentId', as: 'payments' });
 Payment.belongsTo(RoomStudent, { foreignKey: 'roomStudentId', as: 'assignment' });
 RoomStudent.hasMany(Payment, { foreignKey: 'roomStudentId', as: 'payments' });
 
+// Review associations
+Review.belongsTo(Student, { foreignKey: 'studentId', as: 'student' });
+Student.hasMany(Review, { foreignKey: 'studentId', as: 'reviews' });
+
 module.exports = {
   User,
   RefreshToken,
@@ -102,6 +107,7 @@ module.exports = {
   Preference,
   RoomRequest,
   Payment,
-  RegistrationRequest
+  RegistrationRequest,
+  Review
 };
 

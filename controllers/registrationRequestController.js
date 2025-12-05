@@ -5,13 +5,13 @@ const createRequest = async (req, res) => {
     const request = await registrationRequestService.createRequest(req.body);
     res.status(201).json({
       success: true,
-      message: 'تم إرسال طلب التسجيل بنجاح',
+      message: 'Registration request sent successfully',
       data: request
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء إنشاء طلب التسجيل'
+      message: error.message || 'An error occurred while creating the registration request'
     });
   }
 };
@@ -28,7 +28,7 @@ const getRequests = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء جلب طلبات التسجيل'
+      message: error.message || 'An error occurred while fetching registration requests'
     });
   }
 };
@@ -39,13 +39,13 @@ const approveRequest = async (req, res) => {
     const result = await registrationRequestService.approveRequest(id);
     res.json({
       success: true,
-      message: 'تم قبول الطلب وإنشاء حساب الطالب بنجاح',
+      message: 'Request approved and student account created successfully',
       data: result
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء قبول الطلب'
+      message: error.message || 'An error occurred while approving the request'
     });
   }
 };
@@ -56,13 +56,13 @@ const rejectRequest = async (req, res) => {
     const request = await registrationRequestService.rejectRequest(id);
     res.json({
       success: true,
-      message: 'تم رفض الطلب بنجاح',
+      message: 'Request rejected successfully',
       data: request
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message || 'حدث خطأ أثناء رفض الطلب'
+      message: error.message || 'An error occurred while rejecting the request'
     });
   }
 };

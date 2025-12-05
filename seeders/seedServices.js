@@ -3,11 +3,11 @@ const { Service } = require('../models');
 const seedServices = async () => {
   try {
     const services = [
-      { name: 'WiFi', description: 'اتصال بالإنترنت', icon: 'wifi' },
-      { name: 'تكييف', description: 'تكييف هواء', icon: 'ac' },
-      { name: 'تلفزيون', description: 'تلفزيون', icon: 'tv' },
-      { name: 'ثلاجة', description: 'ثلاجة', icon: 'fridge' },
-      { name: 'ميكروويف', description: 'ميكروويف', icon: 'microwave' }
+      { name: 'WiFi', description: 'Internet connection', icon: 'wifi' },
+      { name: 'Air Conditioning', description: 'Air conditioning', icon: 'ac' },
+      { name: 'TV', description: 'Television', icon: 'tv' },
+      { name: 'Refrigerator', description: 'Refrigerator', icon: 'fridge' },
+      { name: 'Microwave', description: 'Microwave', icon: 'microwave' }
     ];
 
     for (const serviceData of services) {

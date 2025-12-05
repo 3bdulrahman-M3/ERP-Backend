@@ -3,16 +3,16 @@ const { College } = require('../models');
 const seedColleges = async () => {
   try {
     const colleges = [
-      { name: 'كلية الهندسة', description: 'كلية الهندسة والتكنولوجيا' },
-      { name: 'كلية الطب', description: 'كلية الطب والجراحة' },
-      { name: 'كلية الصيدلة', description: 'كلية الصيدلة والعلوم الطبية' },
-      { name: 'كلية العلوم', description: 'كلية العلوم الطبيعية' },
-      { name: 'كلية التجارة', description: 'كلية التجارة وإدارة الأعمال' },
-      { name: 'كلية الآداب', description: 'كلية الآداب والعلوم الإنسانية' },
-      { name: 'كلية الحقوق', description: 'كلية الحقوق والعلوم القانونية' },
-      { name: 'كلية التربية', description: 'كلية التربية والعلوم التربوية' },
-      { name: 'كلية الزراعة', description: 'كلية الزراعة والعلوم الزراعية' },
-      { name: 'كلية الفنون', description: 'كلية الفنون والتصميم' }
+      { name: 'Faculty of Engineering', description: 'Faculty of Engineering and Technology' },
+      { name: 'Faculty of Medicine', description: 'Faculty of Medicine and Surgery' },
+      { name: 'Faculty of Pharmacy', description: 'Faculty of Pharmacy and Medical Sciences' },
+      { name: 'Faculty of Science', description: 'Faculty of Natural Sciences' },
+      { name: 'Faculty of Commerce', description: 'Faculty of Commerce and Business Administration' },
+      { name: 'Faculty of Arts', description: 'Faculty of Arts and Humanities' },
+      { name: 'Faculty of Law', description: 'Faculty of Law and Legal Sciences' },
+      { name: 'Faculty of Education', description: 'Faculty of Education and Educational Sciences' },
+      { name: 'Faculty of Agriculture', description: 'Faculty of Agriculture and Agricultural Sciences' },
+      { name: 'Faculty of Fine Arts', description: 'Faculty of Fine Arts and Design' }
     ];
 
     for (const collegeData of colleges) {

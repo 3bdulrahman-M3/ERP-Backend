@@ -82,8 +82,8 @@ const createStudent = async (studentData) => {
   try {
     await notificationService.createNotificationForAdmins(
       'student_created',
-      'طالب جديد',
-      `تم إضافة طالب جديد: ${name}`,
+      'New Student',
+      `A new student has been added: ${name}`,
       student.id,
       'student'
     );
@@ -330,17 +330,17 @@ const completeStudentProfile = async (userId, studentData) => {
   // Check if user exists
   const user = await User.findByPk(userId);
   if (!user) {
-    throw new Error('المستخدم غير موجود');
+    throw new Error('User not found');
   }
 
   if (user.role !== 'student') {
-    throw new Error('هذا المستخدم ليس طالباً');
+    throw new Error('This user is not a student');
   }
 
   // Check if student already exists
   const existingStudent = await Student.findOne({ where: { userId } });
   if (existingStudent) {
-    throw new Error('بيانات الطالب موجودة بالفعل');
+    throw new Error('Student profile already exists');
   }
 
   // Generate QR code
@@ -376,8 +376,8 @@ const completeStudentProfile = async (userId, studentData) => {
   try {
     await notificationService.createNotificationForAdmins(
       'student_created',
-      'طالب جديد',
-      `تم إضافة طالب جديد: ${user.name}`,
+      'New Student',
+      `New student added: ${user.name}`,
       student.id,
       'student'
     );

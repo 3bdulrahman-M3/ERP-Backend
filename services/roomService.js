@@ -65,7 +65,7 @@ const preferenceService = require('./preferenceService');
 
 // Create room
 const createRoom = async (roomData) => {
-  let { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
+  let { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds, images } = roomData;
 
   // Auto-generate room number if not provided
   if (!roomNumber) {
@@ -115,7 +115,8 @@ const createRoom = async (roomData) => {
     roomType: roomType || 'shared',
     roomPrice: roomPrice || null,
     bedPrice: bedPrice || null,
-    description: description || null
+    description: description || null,
+    images: images && Array.isArray(images) ? JSON.stringify(images) : null
   });
 
   // Update building room count if buildingId is provided
@@ -152,8 +153,8 @@ const createRoom = async (roomData) => {
   try {
     await notificationService.createNotificationForAdmins(
       'room_created',
-      'غرفة جديدة',
-      `تم إضافة غرفة جديدة: ${roomNumber}`,
+      'New Room',
+      `A new room has been added: ${roomNumber}`,
       room.id,
       'room'
     );
@@ -171,7 +172,7 @@ const createRoom = async (roomData) => {
       where: { id: roomServiceIds },
       attributes: ['id', 'name']
     });
-    const serviceNames = roomServices.map(s => s.name).join('، ');
+    const serviceNames = roomServices.map(s => s.name).join(', ');
 
     const matchingUserIds = await preferenceService.getStudentsWithMatchingPreferences(
       room.roomType,
@@ -190,20 +191,20 @@ const createRoom = async (roomData) => {
         const matchingServices = roomServices.filter(s => 
           user.preference.preferredServices.includes(s.id)
         );
-        const matchingServiceNames = matchingServices.map(s => s.name).join('، ');
+        const matchingServiceNames = matchingServices.map(s => s.name).join(', ');
 
-        let message = `تم إنشاء غرفة جديدة (${roomNumber})`;
+        let message = `A new room has been created (${roomNumber})`;
         if (matchingServiceNames) {
-          message += ` تحتوي على: ${matchingServiceNames}`;
+          message += ` containing: ${matchingServiceNames}`;
         }
         if (room.roomType && user.preference.roomType === room.roomType) {
-          message += ` - نوع الغرفة: ${room.roomType === 'single' ? 'فردية' : 'جماعية'}`;
+          message += ` - Room type: ${room.roomType === 'single' ? 'Single' : 'Shared'}`;
         }
 
         await notificationService.createNotification(
           userId,
           'room_match_preferences',
-          'غرفة جديدة تطابق تفضيلاتك',
+          'New Room Matches Your Preferences',
           message,
           room.id,
           'room'
@@ -406,7 +407,7 @@ const updateRoom = async (id, roomData) => {
     throw new Error('Room not found');
   }
 
-  const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds } = roomData;
+  const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds, images } = roomData;
 
   // Check if room number is being changed and if it's already taken
   if (roomNumber && roomNumber !== room.roomNumber) {
@@ -461,6 +462,9 @@ const updateRoom = async (id, roomData) => {
   if (status !== undefined) room.status = status;
   if (roomPrice !== undefined) room.roomPrice = roomPrice;
   if (bedPrice !== undefined) room.bedPrice = bedPrice;
+  if (images !== undefined) {
+    room.images = images && Array.isArray(images) ? JSON.stringify(images) : null;
+  }
 
   await room.save();
 

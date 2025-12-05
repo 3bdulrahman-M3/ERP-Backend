@@ -29,6 +29,11 @@ const Meal = sequelize.define('Meal', {
   category: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  image: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Meal image URL'
   }
 }, {
   tableName: 'meals',
