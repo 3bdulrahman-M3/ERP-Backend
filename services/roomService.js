@@ -463,7 +463,15 @@ const updateRoom = async (id, roomData) => {
   if (roomPrice !== undefined) room.roomPrice = roomPrice;
   if (bedPrice !== undefined) room.bedPrice = bedPrice;
   if (images !== undefined) {
-    room.images = images && Array.isArray(images) ? JSON.stringify(images) : null;
+    // If images is an empty array, set to null (delete all images)
+    // Otherwise, stringify the array if it has items
+    if (Array.isArray(images) && images.length === 0) {
+      room.images = null;
+    } else if (images && Array.isArray(images) && images.length > 0) {
+      room.images = JSON.stringify(images);
+    } else {
+      room.images = null;
+    }
   }
 
   await room.save();

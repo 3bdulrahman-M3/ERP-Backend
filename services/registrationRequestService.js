@@ -99,10 +99,7 @@ const approveRequest = async (requestId) => {
   // Update with the already hashed password (bypass hook)
   await user.update({ password: request.password }, { hooks: false });
 
-  // Generate QR code
-  const qrCode = await studentService.generateQRCode(user.id, request.name, request.email);
-
-  // Create student
+  // Create student first (we need student.id for QR code)
   const student = await Student.create({
     name: request.name,
     email: request.email,
@@ -110,9 +107,13 @@ const approveRequest = async (requestId) => {
     year: request.year || null,
     age: request.age || null,
     phoneNumber: request.phoneNumber || null,
-    qrCode,
     userId: user.id
   });
+
+  // Generate QR code with student.id (unique for each student)
+  const qrCode = await studentService.generateQRCode(student.id, request.name, request.email);
+  student.qrCode = qrCode;
+  await student.save();
 
   // Update request status
   request.status = 'approved';

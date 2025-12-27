@@ -7,12 +7,17 @@ const parseQRCode = async (qrData) => {
   try {
     const data = JSON.parse(qrData);
     if (data.id && data.type === 'student') {
-      // QR code contains user.id, so we need to find student by userId
-      const student = await Student.findOne({
-        where: { userId: data.id }
-      });
+      // QR code now contains student.id directly
+      const student = await Student.findByPk(data.id);
       if (student) {
         return student.id;
+      }
+      // Fallback: try to find by userId (for backward compatibility with old QR codes)
+      const studentByUserId = await Student.findOne({
+        where: { userId: data.id }
+      });
+      if (studentByUserId) {
+        return studentByUserId.id;
       }
     }
     return null;

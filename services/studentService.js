@@ -44,10 +44,7 @@ const createStudent = async (studentData) => {
     isActive: true
   });
 
-  // Generate QR code
-  const qrCode = await generateQRCode(user.id, name, email);
-
-  // Create student
+  // Create student first (we need student.id for QR code)
   const student = await Student.create({
     name,
     email,
@@ -60,9 +57,13 @@ const createStudent = async (studentData) => {
     address: address || null,
     guardianPhone: guardianPhone || null,
     idCardImage: idCardImage || null,
-    qrCode,
     userId: user.id
   });
+
+  // Generate QR code with student.id (unique for each student)
+  const qrCode = await generateQRCode(student.id, name, email);
+  student.qrCode = qrCode;
+  await student.save();
 
   // Reload with user and college relations
   await student.reload({ 
@@ -343,10 +344,7 @@ const completeStudentProfile = async (userId, studentData) => {
     throw new Error('Student profile already exists');
   }
 
-  // Generate QR code
-  const qrCode = await generateQRCode(user.id, user.name, user.email);
-
-  // Create student
+  // Create student first (we need student.id for QR code)
   const student = await Student.create({
     name: user.name,
     email: user.email,
@@ -354,9 +352,13 @@ const completeStudentProfile = async (userId, studentData) => {
     year: year || null,
     age: age || null,
     phoneNumber: phoneNumber || null,
-    qrCode,
     userId: user.id
   });
+
+  // Generate QR code with student.id (unique for each student)
+  const qrCode = await generateQRCode(student.id, user.name, user.email);
+  student.qrCode = qrCode;
+  await student.save();
 
   // Reload with relations
   await student.reload({ 
