@@ -3,14 +3,21 @@
   "version": "1.0.0",
   "description": "Backend ERP System built with Node.js and PostgreSQL",
   "main": "app.js",
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
     "migrate": "node migrations/runMigrations.js",
     "migrate:undo": "node migrations/undoLastMigration.js",
     "seed": "node seeders/runAllSeeders.js",
+    "test:connection": "node scripts/test-connection.js",
+    "check:env": "node scripts/check-env.js",
     "fix:category": "node scripts/fix-category-enum.js",
-    "cleanup:users": "node scripts/cleanup-orphaned-users.js"
+    "cleanup:users": "node scripts/cleanup-orphaned-users.js",
+    "postinstall": "echo 'Installation complete. Run npm run migrate to set up database.'"
   },
   "keywords": [
     "erp",
@@ -23,7 +30,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "dotenv": "^16.6.1",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",

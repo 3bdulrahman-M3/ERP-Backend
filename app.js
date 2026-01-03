@@ -47,23 +47,56 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint
+// Health check endpoint with detailed database info
 app.get('/api/health', async (req, res) => {
   try {
+    // Test database connection
     await sequelize.authenticate();
+    
+    // Get database info
+    const [results] = await sequelize.query("SELECT version(), current_database(), current_user");
+    const dbInfo = results[0];
+    
+    // Get connection config (without password)
+    const config = sequelize.config;
+    const connectionInfo = {
+      database: config.database || 'N/A',
+      host: config.host || 'N/A',
+      port: config.port || 'N/A',
+      username: config.username || 'N/A',
+      dialect: config.dialect || 'N/A',
+      usingDATABASE_URL: !!process.env.DATABASE_URL
+    };
+    
     res.json({
       success: true,
       message: 'Database connected successfully',
       data: {
-        database: 'ERP',
-        status: 'connected'
+        status: 'connected',
+        timestamp: new Date().toISOString(),
+        connection: connectionInfo,
+        database: {
+          name: dbInfo.current_database,
+          user: dbInfo.current_user,
+          version: dbInfo.version.split(',')[0] // PostgreSQL version
+        },
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          port: process.env.PORT || PORT
+        }
       }
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Database connection error',
-      error: error.message
+      error: error.message,
+      details: {
+        timestamp: new Date().toISOString(),
+        hasDATABASE_URL: !!process.env.DATABASE_URL,
+        hasIndividualVars: !!(process.env.DB_HOST && process.env.DB_NAME),
+        environment: process.env.NODE_ENV || 'development'
+      }
     });
   }
 });
@@ -108,7 +141,14 @@ app.use((req, res) => {
 // Start server
 const startServer = async () => {
   try {
-    await sequelize.authenticate();
+    // Test database connection with timeout
+    console.log('🔄 Attempting to connect to database...');
+    await Promise.race([
+      sequelize.authenticate(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
+      )
+    ]);
     console.log('✅ Successfully connected to ERP database');
     
     // Run seeder if enabled
@@ -121,18 +161,29 @@ const startServer = async () => {
       }
     }
     
-    // Try to free port before starting
-    const { killPort } = require('./utils/portHandler');
-    const portResult = await killPort(PORT);
-    if (portResult.success && portResult.pids && portResult.pids.length > 0) {
-      console.log(`✅ Freed port ${PORT} (killed ${portResult.pids.length} process(es))`);
-      // Wait a moment for port to be fully released
-      await new Promise(resolve => setTimeout(resolve, 500));
+    // Try to free port before starting (only in development)
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const { killPort } = require('./utils/portHandler');
+        const portResult = await killPort(PORT);
+        if (portResult.success && portResult.pids && portResult.pids.length > 0) {
+          console.log(`✅ Freed port ${PORT} (killed ${portResult.pids.length} process(es))`);
+          // Wait a moment for port to be fully released
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        // Ignore port handler errors in production or if module doesn't exist
+        console.log('⚠️  Port handler skipped');
+      }
     }
     
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📍 URL: http://localhost:${PORT}`);
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`📍 Production server ready`);
+      } else {
+        console.log(`📍 URL: http://localhost:${PORT}`);
+      }
     });
 
     // Handle server errors

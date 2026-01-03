@@ -7,6 +7,17 @@ Backend ERP System built with Node.js and PostgreSQL
 - Node.js (version 14 or higher)
 - PostgreSQL (version 12 or higher)
 
+## 🚀 Railway Deployment
+
+للنشر على Railway، راجع ملف [RAILWAY_SETUP.md](./RAILWAY_SETUP.md) للتعليمات التفصيلية.
+
+**ملخص سريع:**
+1. أنشئ مشروع جديد على Railway
+2. أضف PostgreSQL Database service
+3. أضف Environment Variables (راجع `.env.example`)
+4. ارفع الكود من GitHub
+5. شغل Migrations: `railway run npm run migrate`
+
 ## Installation
 
 1. Install required packages:
@@ -14,8 +25,11 @@ Backend ERP System built with Node.js and PostgreSQL
 npm install
 ```
 
-2. Create `.env` file and enter your database credentials:
+2. Create `.env` file and enter your database credentials (or copy from `.env.example`):
 ```
+# For Railway: DATABASE_URL is provided automatically
+# For local: Use individual variables below
+
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=ERP
@@ -111,6 +125,9 @@ Backend-ERP/
 ├── seeders/
 │   └── seedAdmin.js        # Seeder for default Admin account
 ├── .env                    # Environment file (must be created)
+├── .env.example            # Environment variables template
+├── Procfile                # Railway deployment file
+├── railway.json            # Railway configuration
 ├── package.json            # Project file
 └── README.md               # This file
 ```
