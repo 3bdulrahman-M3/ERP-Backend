@@ -33,7 +33,42 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Middlewares
-app.use(cors());
+// CORS configuration - Allow Netlify and localhost
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'http://localhost:4200',
+      'http://localhost:3000',
+      /^https:\/\/.*\.netlify\.app$/,  // All Netlify subdomains
+      /^https:\/\/.*\.koyeb\.app$/,    // All Koyeb subdomains
+      /^https:\/\/.*\.railway\.app$/   // All Railway subdomains
+    ];
+    
+    // Check if origin matches any allowed pattern
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed;
+      } else if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️  CORS blocked origin: ${origin}`);
+      callback(null, true); // Allow all for now - change to callback(new Error('Not allowed')) for strict mode
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
