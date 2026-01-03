@@ -23,7 +23,14 @@ const responseHandler = require('./middlewares/responseHandler');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// Ensure PORT is a number, not a string
+const PORT = parseInt(process.env.PORT, 10) || 3001;
+
+// Debug: Log PORT value
+if (process.env.NODE_ENV === 'development') {
+  console.log(`🔧 PORT from env: ${process.env.PORT || 'not set'}`);
+  console.log(`🔧 PORT resolved to: ${PORT}`);
+}
 
 // Middlewares
 app.use(cors());
@@ -141,15 +148,38 @@ app.use((req, res) => {
 // Start server
 const startServer = async () => {
   try {
+    // Debug: Print environment info
+    console.log('\n🔍 Environment Debug Info:');
+    console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+    console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? '✅ Set (hidden)' : '❌ NOT SET'}`);
+    console.log(`   DB_HOST: ${process.env.DB_HOST || 'not set'}`);
+    console.log(`   DB_NAME: ${process.env.DB_NAME || 'not set'}`);
+    console.log(`   DB_USER: ${process.env.DB_USER || 'not set'}`);
+    console.log(`   DB_PORT: ${process.env.DB_PORT || 'not set'}`);
+    console.log(`   DB_PASSWORD: ${process.env.DB_PASSWORD ? '✅ Set (hidden)' : 'not set'}`);
+    console.log('');
+    
     // Test database connection with timeout
     console.log('🔄 Attempting to connect to database...');
-    await Promise.race([
-      sequelize.authenticate(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
-      )
-    ]);
-    console.log('✅ Successfully connected to ERP database');
+    try {
+      await Promise.race([
+        sequelize.authenticate(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
+        )
+      ]);
+      console.log('✅ Successfully connected to ERP database');
+    } catch (dbError) {
+      console.error('❌ Database connection failed!');
+      console.error(`   Error: ${dbError.message}`);
+      if (!process.env.DATABASE_URL && !process.env.DB_HOST) {
+        console.error('\n📝 SOLUTION: Add DATABASE_URL to Koyeb Variables:');
+        console.error('   1. Go to Koyeb Dashboard → Your App → Variables');
+        console.error('   2. Add: DATABASE_URL=postgresql://user:pass@host:port/db');
+        console.error('   3. Restart the app');
+      }
+      throw dbError;
+    }
     
     // Run seeder if enabled
     if (process.env.RUN_SEEDER === 'true') {
@@ -177,6 +207,12 @@ const startServer = async () => {
       }
     }
     
+    // Validate PORT is a valid number
+    if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
+      throw new Error(`Invalid PORT: ${PORT}. Must be a number between 1 and 65535.`);
+    }
+    
+    console.log(`🔧 Starting server on port ${PORT}...`);
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${PORT}`);
       if (process.env.NODE_ENV === 'production') {

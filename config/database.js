@@ -41,16 +41,31 @@ if (isRailwayInternal && isDevelopment) {
 }
 
 if (hasDATABASE_URL) {
-  // Railway provides DATABASE_URL in format: postgresql://user:password@host:port/database
+  // Railway/Koyeb provides DATABASE_URL in format: postgresql://user:password@host:port/database
   // Only use it if it's not a Railway internal URL (which won't work locally)
+  console.log('🔧 Using DATABASE_URL for connection');
+  
+  // Check if it's a Railway URL (needs SSL) or regular URL
+  const isRailwayURL = process.env.DATABASE_URL.includes('railway') || 
+                        process.env.DATABASE_URL.includes('rlwy.net');
+  const hasSSLMode = process.env.DATABASE_URL.includes('sslmode');
+  // Always enable SSL for Railway URLs or if sslmode is specified
+  const needsSSL = isRailwayURL || hasSSLMode || process.env.NODE_ENV === 'production';
+  
+  console.log(`🔍 SSL Detection: Railway=${isRailwayURL}, SSLMode=${hasSSLMode}, Production=${process.env.NODE_ENV === 'production'}, NeedsSSL=${needsSSL}`);
+  
+  if (needsSSL) {
+    console.log('🔒 SSL enabled for database connection (rejectUnauthorized: false)');
+  }
+  
   sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     protocol: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     dialectOptions: {
-      ssl: process.env.NODE_ENV === 'production' ? {
+      ssl: needsSSL ? {
         require: true,
-        rejectUnauthorized: false
+        rejectUnauthorized: false  // Accept self-signed certificates (required for Railway/Koyeb)
       } : false
     },
     pool: {
@@ -58,6 +73,9 @@ if (hasDATABASE_URL) {
       min: 0,
       acquire: 30000,
       idle: 10000
+    },
+    retry: {
+      max: 3
     }
   });
 } else if (hasIndividualVars) {
@@ -89,14 +107,23 @@ if (hasDATABASE_URL) {
   // Fallback: try to use DATABASE_URL even if it's Railway internal (for Railway production only)
   if (process.env.DATABASE_URL && !isRailwayInternal) {
     // Use DATABASE_URL if it's not Railway internal
+    const hasSSLMode = process.env.DATABASE_URL.includes('sslmode');
+    const isRailwayURL = process.env.DATABASE_URL.includes('railway') || 
+                         process.env.DATABASE_URL.includes('rlwy.net');
+    const needsSSL = process.env.NODE_ENV === 'production' || hasSSLMode || isRailwayURL;
+    
+    if (needsSSL) {
+      console.log('🔒 SSL enabled with rejectUnauthorized: false');
+    }
+    
     sequelize = new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
       dialectOptions: {
-        ssl: process.env.NODE_ENV === 'production' ? {
+        ssl: needsSSL ? {
           require: true,
-          rejectUnauthorized: false
+          rejectUnauthorized: false  // Always false for Railway/Koyeb
         } : false
       },
       pool: {
@@ -129,15 +156,16 @@ if (hasDATABASE_URL) {
     
     // We're on Railway, so Railway internal URL is fine
     console.log('✅ Using Railway internal DATABASE_URL (running on Railway).');
+    console.log('🔒 SSL enabled with rejectUnauthorized: false');
     sequelize = new Sequelize(process.env.DATABASE_URL, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
       dialectOptions: {
-        ssl: process.env.NODE_ENV === 'production' ? {
+        ssl: {
           require: true,
-          rejectUnauthorized: false
-        } : false
+          rejectUnauthorized: false  // Always false for Railway/Koyeb
+        }
       },
       pool: {
         max: 5,
