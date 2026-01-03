@@ -58,16 +58,24 @@ if (hasDATABASE_URL) {
     console.log('🔒 SSL enabled for database connection (rejectUnauthorized: false)');
   }
   
-  sequelize = new Sequelize(process.env.DATABASE_URL, {
+  // Remove sslmode from DATABASE_URL to avoid conflicts with Sequelize SSL settings
+  let cleanDatabaseUrl = process.env.DATABASE_URL;
+  if (cleanDatabaseUrl.includes('?sslmode=')) {
+    cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
+    console.log('🔧 Removed sslmode from DATABASE_URL (using Sequelize SSL config instead)');
+  }
+  
+  sequelize = new Sequelize(cleanDatabaseUrl, {
     dialect: 'postgres',
     protocol: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    dialectOptions: {
-      ssl: needsSSL ? {
+    dialectOptions: needsSSL ? {
+      ssl: {
         require: true,
         rejectUnauthorized: false  // Accept self-signed certificates (required for Railway/Koyeb)
-      } : false
-    },
+      },
+      native: true  // Use native PostgreSQL client for better SSL support
+    } : {},
     pool: {
       max: 5,
       min: 0,
@@ -116,16 +124,24 @@ if (hasDATABASE_URL) {
       console.log('🔒 SSL enabled with rejectUnauthorized: false');
     }
     
-    sequelize = new Sequelize(process.env.DATABASE_URL, {
+    // Remove sslmode from DATABASE_URL to avoid conflicts
+    let cleanDatabaseUrl = process.env.DATABASE_URL;
+    if (cleanDatabaseUrl.includes('?sslmode=')) {
+      cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
+      console.log('🔧 Removed sslmode from DATABASE_URL (using Sequelize SSL config instead)');
+    }
+    
+    sequelize = new Sequelize(cleanDatabaseUrl, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      dialectOptions: {
-        ssl: needsSSL ? {
+      dialectOptions: needsSSL ? {
+        ssl: {
           require: true,
           rejectUnauthorized: false  // Always false for Railway/Koyeb
-        } : false
-      },
+        },
+        native: true
+      } : {},
       pool: {
         max: 5,
         min: 0,
@@ -157,7 +173,14 @@ if (hasDATABASE_URL) {
     // We're on Railway, so Railway internal URL is fine
     console.log('✅ Using Railway internal DATABASE_URL (running on Railway).');
     console.log('🔒 SSL enabled with rejectUnauthorized: false');
-    sequelize = new Sequelize(process.env.DATABASE_URL, {
+    
+    // Remove sslmode from DATABASE_URL to avoid conflicts
+    let cleanDatabaseUrl = process.env.DATABASE_URL;
+    if (cleanDatabaseUrl.includes('?sslmode=')) {
+      cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
+    }
+    
+    sequelize = new Sequelize(cleanDatabaseUrl, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -165,7 +188,8 @@ if (hasDATABASE_URL) {
         ssl: {
           require: true,
           rejectUnauthorized: false  // Always false for Railway/Koyeb
-        }
+        },
+        native: true
       },
       pool: {
         max: 5,
