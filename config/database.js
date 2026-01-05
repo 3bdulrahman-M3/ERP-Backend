@@ -131,6 +131,13 @@ if (hasDATABASE_URL) {
   });
 } else if (hasIndividualVars) {
   // Fallback to individual environment variables
+  const requireSSL = process.env.NODE_ENV === 'production';
+  const sslConfig = getSSLConfig(requireSSL);
+  
+  if (requireSSL) {
+    console.log('🔒 SSL enabled for database connection (rejectUnauthorized: false)');
+  }
+  
   sequelize = new Sequelize(
     process.env.DB_NAME || 'ERP',
     process.env.DB_USER || 'postgres',
@@ -140,12 +147,7 @@ if (hasDATABASE_URL) {
       port: process.env.DB_PORT || 5432,
       dialect: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      dialectOptions: {
-        ssl: process.env.NODE_ENV === 'production' ? {
-          require: true,
-          rejectUnauthorized: false
-        } : false
-      },
+      dialectOptions: sslConfig,
       pool: {
         max: 5,
         min: 0,
@@ -203,23 +205,15 @@ if (hasDATABASE_URL) {
     console.log('✅ Using Railway internal DATABASE_URL (running on Railway).');
     console.log('🔒 SSL enabled with rejectUnauthorized: false');
     
-    // Remove sslmode from DATABASE_URL to avoid conflicts
-    let cleanDatabaseUrl = process.env.DATABASE_URL;
-    if (cleanDatabaseUrl.includes('?sslmode=')) {
-      cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
-    }
+    // Clean DATABASE_URL by removing sslmode and other query parameters
+    const cleanedUrl = cleanDatabaseUrl(process.env.DATABASE_URL);
+    const sslConfig = getSSLConfig(true); // Railway always requires SSL
     
-    sequelize = new Sequelize(cleanDatabaseUrl, {
+    sequelize = new Sequelize(cleanedUrl, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      dialectOptions: {
-        ssl: {
-          require: true,
-          rejectUnauthorized: false  // Always false for Railway/Koyeb
-        },
-        native: true
-      },
+      dialectOptions: sslConfig,
       pool: {
         max: 5,
         min: 0,
