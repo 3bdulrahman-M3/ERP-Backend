@@ -4,6 +4,64 @@ require('dotenv').config();
 // Support for DATABASE_URL (Railway, Koyeb, etc.) or individual variables
 let sequelize;
 
+/**
+ * Removes sslmode and other query parameters from DATABASE_URL
+ * This prevents conflicts with Sequelize's SSL settings
+ * @param {string} databaseUrl - The original DATABASE_URL
+ * @returns {string} - Clean DATABASE_URL without query parameters
+ */
+function cleanDatabaseUrl(databaseUrl) {
+  if (!databaseUrl) return databaseUrl;
+  
+  // Remove query parameters (sslmode, etc.) to avoid conflicts with Sequelize SSL config
+  const urlParts = databaseUrl.split('?');
+  if (urlParts.length > 1) {
+    console.log('🔧 Removing query parameters from DATABASE_URL (using Sequelize SSL config instead)');
+    return urlParts[0];
+  }
+  return databaseUrl;
+}
+
+/**
+ * Determines if SSL is needed based on environment and URL
+ * @param {string} databaseUrl - The DATABASE_URL (can be null)
+ * @returns {boolean} - Whether SSL is required
+ */
+function needsSSL(databaseUrl) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isRailwayURL = databaseUrl && (
+    databaseUrl.includes('railway') || 
+    databaseUrl.includes('rlwy.net') ||
+    databaseUrl.includes('railway.internal')
+  );
+  const isKoyebURL = databaseUrl && databaseUrl.includes('koyeb');
+  
+  // SSL is required for:
+  // 1. Production environment
+  // 2. Railway URLs (always require SSL)
+  // 3. Koyeb URLs (always require SSL)
+  return isProduction || isRailwayURL || isKoyebURL;
+}
+
+/**
+ * Gets SSL configuration for Sequelize dialectOptions
+ * @param {boolean} requireSSL - Whether SSL is required
+ * @returns {object} - SSL configuration object
+ */
+function getSSLConfig(requireSSL) {
+  if (!requireSSL) {
+    return {};
+  }
+  
+  return {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false  // Accept self-signed certificates (required for Railway/Koyeb)
+    },
+    native: true  // Use native PostgreSQL client for better SSL support
+  };
+}
+
 // Check if DATABASE_URL exists and is not a Railway internal URL (for local development)
 const isRailwayInternal = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway.internal');
 const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -45,37 +103,22 @@ if (hasDATABASE_URL) {
   // Only use it if it's not a Railway internal URL (which won't work locally)
   console.log('🔧 Using DATABASE_URL for connection');
   
-  // Check if it's a Railway URL (needs SSL) or regular URL
-  const isRailwayURL = process.env.DATABASE_URL.includes('railway') || 
-                        process.env.DATABASE_URL.includes('rlwy.net');
-  const hasSSLMode = process.env.DATABASE_URL.includes('sslmode');
-  // Always enable SSL for Railway URLs or if sslmode is specified
-  const needsSSL = isRailwayURL || hasSSLMode || process.env.NODE_ENV === 'production';
+  // Clean DATABASE_URL by removing sslmode and other query parameters
+  const cleanedUrl = cleanDatabaseUrl(process.env.DATABASE_URL);
+  const requireSSL = needsSSL(process.env.DATABASE_URL);
+  const sslConfig = getSSLConfig(requireSSL);
   
-  console.log(`🔍 SSL Detection: Railway=${isRailwayURL}, SSLMode=${hasSSLMode}, Production=${process.env.NODE_ENV === 'production'}, NeedsSSL=${needsSSL}`);
+  console.log(`🔍 SSL Detection: Production=${process.env.NODE_ENV === 'production'}, RequiresSSL=${requireSSL}`);
   
-  if (needsSSL) {
+  if (requireSSL) {
     console.log('🔒 SSL enabled for database connection (rejectUnauthorized: false)');
   }
   
-  // Remove sslmode from DATABASE_URL to avoid conflicts with Sequelize SSL settings
-  let cleanDatabaseUrl = process.env.DATABASE_URL;
-  if (cleanDatabaseUrl.includes('?sslmode=')) {
-    cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
-    console.log('🔧 Removed sslmode from DATABASE_URL (using Sequelize SSL config instead)');
-  }
-  
-  sequelize = new Sequelize(cleanDatabaseUrl, {
+  sequelize = new Sequelize(cleanedUrl, {
     dialect: 'postgres',
     protocol: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    dialectOptions: needsSSL ? {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false  // Accept self-signed certificates (required for Railway/Koyeb)
-      },
-      native: true  // Use native PostgreSQL client for better SSL support
-    } : {},
+    dialectOptions: sslConfig,
     pool: {
       max: 5,
       min: 0,
@@ -115,33 +158,19 @@ if (hasDATABASE_URL) {
   // Fallback: try to use DATABASE_URL even if it's Railway internal (for Railway production only)
   if (process.env.DATABASE_URL && !isRailwayInternal) {
     // Use DATABASE_URL if it's not Railway internal
-    const hasSSLMode = process.env.DATABASE_URL.includes('sslmode');
-    const isRailwayURL = process.env.DATABASE_URL.includes('railway') || 
-                         process.env.DATABASE_URL.includes('rlwy.net');
-    const needsSSL = process.env.NODE_ENV === 'production' || hasSSLMode || isRailwayURL;
+    const cleanedUrl = cleanDatabaseUrl(process.env.DATABASE_URL);
+    const requireSSL = needsSSL(process.env.DATABASE_URL);
+    const sslConfig = getSSLConfig(requireSSL);
     
-    if (needsSSL) {
+    if (requireSSL) {
       console.log('🔒 SSL enabled with rejectUnauthorized: false');
     }
     
-    // Remove sslmode from DATABASE_URL to avoid conflicts
-    let cleanDatabaseUrl = process.env.DATABASE_URL;
-    if (cleanDatabaseUrl.includes('?sslmode=')) {
-      cleanDatabaseUrl = cleanDatabaseUrl.split('?')[0];
-      console.log('🔧 Removed sslmode from DATABASE_URL (using Sequelize SSL config instead)');
-    }
-    
-    sequelize = new Sequelize(cleanDatabaseUrl, {
+    sequelize = new Sequelize(cleanedUrl, {
       dialect: 'postgres',
       protocol: 'postgres',
       logging: process.env.NODE_ENV === 'development' ? console.log : false,
-      dialectOptions: needsSSL ? {
-        ssl: {
-          require: true,
-          rejectUnauthorized: false  // Always false for Railway/Koyeb
-        },
-        native: true
-      } : {},
+      dialectOptions: sslConfig,
       pool: {
         max: 5,
         min: 0,
