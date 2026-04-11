@@ -59,17 +59,21 @@ app.use(cors({
 // Important: Handle Preflight requests
 app.options("*", cors());
 
-// Manual Headers for Vercel compatibility
+// Manual Headers for Vercel (BRUTE FORCE)
 app.use((req, res, next) => {
+  console.log(`🔍 REQUEST HIT: ${req.method} ${req.url}`);
   const origin = req.headers.origin;
+  
   if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
+  } else if (process.env.NODE_ENV === 'development') {
+    res.header("Access-Control-Allow-Origin", "*");
   }
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Refresh-Token");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
   res.header("Access-Control-Allow-Credentials", "true");
   
-  // Handle OPTIONS method directly for manual headers
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -85,6 +89,16 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(responseHandler);
 
 // Routes
+// Debug Test Route
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Backend is live and CORS is active',
+    env: process.env.NODE_ENV,
+    allowedOrigins
+  });
+});
+
 app.get('/', (req, res) => {
   res.json({
     success: true,
