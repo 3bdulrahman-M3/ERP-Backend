@@ -14,6 +14,17 @@ const login = async (req, res, next) => {
 
     const result = await authService.login(email, password);
 
+    // Set tokens in cookies
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // true for HTTPS on Vercel
+      sameSite: 'none', // Required for cross-domain cookies
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    };
+
+    res.cookie('accessToken', result.accessToken, { ...cookieOptions, maxAge: 15 * 60 * 1000 }); // 15 mins
+    res.cookie('refreshToken', result.refreshToken, cookieOptions);
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -29,7 +40,10 @@ const login = async (req, res, next) => {
 
 const refreshToken = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    let refreshToken = req.body.refreshToken;
+    if (!refreshToken && req.cookies) {
+      refreshToken = req.cookies.refreshToken;
+    }
 
     if (!refreshToken) {
       return res.status(400).json({
@@ -39,6 +53,13 @@ const refreshToken = async (req, res, next) => {
     }
 
     const result = await authService.refreshAccessToken(refreshToken);
+
+    res.cookie('accessToken', result.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      maxAge: 15 * 60 * 1000 // 15 mins
+    });
 
     res.json({
       success: true,
@@ -55,7 +76,10 @@ const refreshToken = async (req, res, next) => {
 
 const logout = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    let refreshToken = req.body.refreshToken;
+    if (!refreshToken && req.cookies) {
+      refreshToken = req.cookies.refreshToken;
+    }
 
     if (!refreshToken) {
       return res.status(400).json({
@@ -65,6 +89,9 @@ const logout = async (req, res, next) => {
     }
 
     await authService.logout(refreshToken);
+
+    res.clearCookie('accessToken', { httpOnly: true, secure: true, sameSite: 'none' });
+    res.clearCookie('refreshToken', { httpOnly: true, secure: true, sameSite: 'none' });
 
     res.json({
       success: true,
@@ -142,6 +169,17 @@ const register = async (req, res, next) => {
       year,
       age
     });
+
+    // Set tokens in cookies
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    };
+
+    res.cookie('accessToken', result.accessToken, { ...cookieOptions, maxAge: 15 * 60 * 1000 });
+    res.cookie('refreshToken', result.refreshToken, cookieOptions);
 
     res.status(201).json({
       success: true,
