@@ -33,15 +33,49 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Middlewares
-// CORS configuration - Allow Vercel, Netlify and localhost
+// CORS configuration - Allow Vercel and localhost
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://erp-frontend-mocha-three.vercel.app"
+];
+
 app.use(cors({
-  origin: true,
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Set-Cookie'],
   optionsSuccessStatus: 200
 }));
+
+// Important: Handle Preflight requests
+app.options("*", cors());
+
+// Manual Headers for Vercel compatibility
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.header("Access-Control-Allow-Credentials", "true");
+  
+  // Handle OPTIONS method directly for manual headers
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
