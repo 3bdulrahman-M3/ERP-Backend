@@ -38,22 +38,9 @@ if (process.env.NODE_ENV === 'development') {
 
 // Middlewares
 // 1. إعدادات CORS المتوافقة مع Vercel (Production-safe)
-const allowedOrigins = [
-  "https://erp-frontend-mocha-three.vercel.app",
-  "http://localhost:3000"
-];
-
+// 1. إعدادات CORS (مفتوحة للكل مع دعم الـ Credentials)
 const corsOptions = {
-  origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-
-    const isAllowed = 
-      allowedOrigins.includes(origin) || 
-      origin.endsWith(".vercel.app");
-      
-    callback(null, isAllowed);
-  },
+  origin: true,
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -64,9 +51,7 @@ app.use(cors(corsOptions));
 app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     const origin = req.headers.origin;
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
-      res.header("Access-Control-Allow-Origin", origin || "*");
-    }
+    res.header("Access-Control-Allow-Origin", origin || "*");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
     res.header("Access-Control-Allow-Credentials", "true");
