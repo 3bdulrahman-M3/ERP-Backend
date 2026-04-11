@@ -23,6 +23,10 @@ const responseHandler = require('./middlewares/responseHandler');
 const path = require('path');
 
 const app = express();
+
+// Enable trust proxy for Vercel/Reverse Proxies
+app.set("trust proxy", 1);
+
 // Ensure PORT is a number, not a string
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 
@@ -33,59 +37,54 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Middlewares
-// CORS configuration - Allow Vercel and localhost
+// 1. إعدادات CORS المتوافقة مع Vercel (Production-safe)
 const allowedOrigins = [
-  "http://localhost:3000",
-  "https://erp-frontend-mocha-three.vercel.app"
+  "https://erp-frontend-mocha-three.vercel.app",
+  "http://localhost:3000"
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
+
+    const isAllowed = 
+      allowedOrigins.includes(origin) || 
+      origin.endsWith(".vercel.app");
+      
+    callback(null, isAllowed);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Set-Cookie'],
   optionsSuccessStatus: 200
-}));
+};
 
-// Important: Handle Preflight requests
-app.options("*", cors());
+app.use(cors(corsOptions));
 
-// Manual Headers for Vercel (BRUTE FORCE)
+// 2. معالجة الـ Preflight لجميع المسارات بنفس الإعدادات (Safety Net)
 app.use((req, res, next) => {
-  console.log(`🔍 REQUEST HIT: ${req.method} ${req.url}`);
-  const origin = req.headers.origin;
-  
-  if (allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-  } else if (process.env.NODE_ENV === 'development') {
-    res.header("Access-Control-Allow-Origin", "*");
-  }
-  
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Refresh-Token");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.header("Access-Control-Allow-Credentials", "true");
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    const origin = req.headers.origin;
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+      res.header("Access-Control-Allow-Origin", origin || "*");
+    }
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.header("Access-Control-Allow-Credentials", "true");
+    return res.sendStatus(200);
   }
   next();
 });
 
+app.options("*", cors(corsOptions));
+
+// 3. تحليل البيانات
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files - Must be before responseHandler
+// 4. الملفات الثابتة
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// 5. موحد الاستجابات
 app.use(responseHandler);
 
 // Routes
@@ -93,7 +92,7 @@ app.use(responseHandler);
 app.get('/api/test', (req, res) => {
   res.json({ 
     success: true, 
-    message: 'Backend is live and CORS is active',
+    message: 'Backend is live with Production-safe CORS',
     env: process.env.NODE_ENV,
     allowedOrigins
   });
@@ -204,13 +203,6 @@ app.use((req, res) => {
 // Start server function
 const startServer = async () => {
   try {
-    // Skip DB authentication and server listening on Vercel
-    // Vercel handles the invocation and we should connect lazily or handled by the bridge
-    if (process.env.VERCEL) {
-      console.log('🚀 Running on Vercel environment');
-      return;
-    }
-
     // Debug: Print environment info
     console.log('\n🔍 Environment Debug Info:');
     console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
