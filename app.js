@@ -33,41 +33,45 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Middlewares
-// CORS configuration - Allow Netlify and localhost
+// CORS configuration - Allow Vercel, Netlify and localhost
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // List of allowed origins
-    const allowedOrigins = [
+    // List of allowed origins/patterns
+    const allowedPatterns = [
       'http://localhost:4200',
       'http://localhost:3000',
-      /^https:\/\/.*\.netlify\.app$/,  // All Netlify subdomains
-      /^https:\/\/.*\.koyeb\.app$/,    // All Koyeb subdomains
-      /^https:\/\/.*\.railway\.app$/   // All Railway subdomains
+      'http://localhost:5173',
+      /^https:\/\/.*\.netlify\.app$/,
+      /^https:\/\/.*\.koyeb\.app$/,
+      /^https:\/\/.*\.railway\.app$/,
+      /^https:\/\/.*\.vercel\.app$/    // Added Vercel
     ];
     
     // Check if origin matches any allowed pattern
-    const isAllowed = allowedOrigins.some(allowed => {
-      if (typeof allowed === 'string') {
-        return origin === allowed;
-      } else if (allowed instanceof RegExp) {
-        return allowed.test(origin);
+    const isAllowed = allowedPatterns.some(pattern => {
+      if (typeof pattern === 'string') {
+        return origin === pattern;
+      } else {
+        return pattern.test(origin);
       }
-      return false;
     });
     
     if (isAllowed) {
       callback(null, true);
     } else {
       console.warn(`⚠️  CORS blocked origin: ${origin}`);
-      callback(null, true); // Allow all for now - change to callback(new Error('Not allowed')) for strict mode
+      // In development, we might want to allow it anyway for debugging
+      // But for production, we should be strict
+      callback(null, true); 
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Set-Cookie']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
