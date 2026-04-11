@@ -1,5 +1,6 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
+require('pg'); // Explicitly require pg to help bundlers and fix "Please install pg package manually" error
 
 // Support for DATABASE_URL (Railway, Koyeb, etc.) or individual variables
 let sequelize;
@@ -35,12 +36,14 @@ function needsSSL(databaseUrl) {
     databaseUrl.includes('railway.internal')
   );
   const isKoyebURL = databaseUrl && databaseUrl.includes('koyeb');
+  const isSupabaseURL = databaseUrl && databaseUrl.includes('supabase.com');
   
   // SSL is required for:
   // 1. Production environment
   // 2. Railway URLs (always require SSL)
   // 3. Koyeb URLs (always require SSL)
-  return isProduction || isRailwayURL || isKoyebURL;
+  // 4. Supabase URLs (always require SSL)
+  return isProduction || isRailwayURL || isKoyebURL || isSupabaseURL;
 }
 
 /**
