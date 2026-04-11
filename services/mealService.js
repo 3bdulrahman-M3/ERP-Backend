@@ -1,5 +1,4 @@
-const { Meal, User } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../config/prisma');
 const notificationService = require('./notificationService');
 
 // Track previous kitchen status (in-memory cache)
@@ -8,20 +7,40 @@ let previousKitchenStatus = {
   currentMealId: null
 };
 
-// Helper function to get current time in HH:mm format
+// Helper function to format Prisma Date to HH:mm:ss
+const formatPrismaTime = (date) => {
+  if (!date) return '00:00:00';
+  const d = new Date(date);
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+};
+
+// Helper function to convert HH:mm:ss string to Date object for Prisma
+const parseTimeToDate = (timeStr) => {
+  if (!timeStr) return new Date();
+  const [h, m, s] = timeStr.split(':').map(Number);
+  const d = new Date(0); // Use epoch to keep date part stable
+  d.setUTCHours(h || 0, m || 0, s || 0, 0);
+  return d;
+};
+
+// Helper function to get current time in HH:mm:ss format
 const getCurrentTime = () => {
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}:00`;
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
 };
 
 // Helper function to compare times (HH:mm:ss format)
 const compareTime = (time1, time2) => {
   const [h1, m1] = time1.split(':').map(Number);
   const [h2, m2] = time2.split(':').map(Number);
-  const total1 = h1 * 60 + m1;
-  const total2 = h2 * 60 + m2;
+  const total1 = h1 * 60 + (m1 || 0);
+  const total2 = h2 * 60 + (m2 || 0);
   return total1 - total2;
 };
 
@@ -32,19 +51,29 @@ const isTimeBetween = (currentTime, startTime, endTime) => {
 
 // Get all meals
 const getAllMeals = async (page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   
-  const { count, rows } = await Meal.findAndCountAll({
-    order: [
-      ['name', 'ASC'],
-      ['startTime', 'ASC']
-    ],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [meals, count] = await Promise.all([
+    prisma.meal.findMany({
+      orderBy: [
+        { name: 'asc' },
+        { startTime: 'asc' }
+      ],
+      skip,
+      take
+    }),
+    prisma.meal.count()
+  ]);
+  
+  const formattedMeals = meals.map(meal => ({
+    ...meal,
+    startTime: formatPrismaTime(meal.startTime),
+    endTime: formatPrismaTime(meal.endTime)
+  }));
   
   return {
-    meals: rows.map(meal => meal.toJSON()),
+    meals: formattedMeals,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -56,43 +85,50 @@ const getAllMeals = async (page = 1, limit = 10) => {
 
 // Get meal by ID
 const getMealById = async (id) => {
-  const meal = await Meal.findByPk(id);
+  const mealId = parseInt(id);
+  const meal = await prisma.meal.findUnique({
+    where: { id: mealId }
+  });
+  
   if (!meal) {
     throw new Error('Meal not found');
   }
-  return meal;
+  
+  return {
+    ...meal,
+    startTime: formatPrismaTime(meal.startTime),
+    endTime: formatPrismaTime(meal.endTime)
+  };
 };
 
 // Create meal
 const createMeal = async (mealData) => {
   const { name, startTime, endTime, isActive, category, image } = mealData;
 
-  // Validate time format
   if (!startTime || !endTime) {
     throw new Error('Start time and end time are required');
   }
 
-  // Validate that end time is after start time
   if (compareTime(endTime, startTime) <= 0) {
     throw new Error('End time must be after start time');
   }
 
-  // Check if meal with same name already exists
-  const existingMeal = await Meal.findOne({ where: { name } });
+  const existingMeal = await prisma.meal.findUnique({ where: { name } });
   if (existingMeal) {
     throw new Error(`Meal with name ${name} already exists`);
   }
 
-  const meal = await Meal.create({
-    name,
-    startTime,
-    endTime,
-    isActive: isActive !== undefined ? isActive : true,
-    category: category || null,
-    image: image || null
+  const meal = await prisma.meal.create({
+    data: {
+      name,
+      startTime: parseTimeToDate(startTime),
+      endTime: parseTimeToDate(endTime),
+      isActive: isActive !== undefined ? isActive : true,
+      category: category || null,
+      image: image || null
+    }
   });
 
-  // Create notification for admins
   try {
     await notificationService.createNotificationForAdmins(
       'meal_created',
@@ -105,12 +141,17 @@ const createMeal = async (mealData) => {
     console.error('Error creating notification:', error);
   }
 
-  return meal.toJSON();
+  return {
+    ...meal,
+    startTime: formatPrismaTime(meal.startTime),
+    endTime: formatPrismaTime(meal.endTime)
+  };
 };
 
 // Update meal
 const updateMeal = async (id, mealData) => {
-  const meal = await Meal.findByPk(id);
+  const mealId = parseInt(id);
+  const meal = await prisma.meal.findUnique({ where: { id: mealId } });
   if (!meal) {
     throw new Error('Meal not found');
   }
@@ -118,46 +159,63 @@ const updateMeal = async (id, mealData) => {
   const { name, startTime, endTime, isActive, category, image } = mealData;
 
   if (name && name !== meal.name) {
-    const existingMeal = await Meal.findOne({ where: { name } });
+    const existingMeal = await prisma.meal.findUnique({ where: { name } });
     if (existingMeal) {
       throw new Error(`Meal with name ${name} already exists`);
     }
-    meal.name = name;
   }
 
-  if (startTime) meal.startTime = startTime;
-  if (endTime) meal.endTime = endTime;
-  if (isActive !== undefined) meal.isActive = isActive;
-  if (category !== undefined) meal.category = category;
-  if (image !== undefined) meal.image = image || null;
+  const sTime = startTime ? startTime : formatPrismaTime(meal.startTime);
+  const eTime = endTime ? endTime : formatPrismaTime(meal.endTime);
 
-  // Validate that end time is after start time
-  if (meal.startTime && meal.endTime && compareTime(meal.endTime, meal.startTime) <= 0) {
+  if (compareTime(eTime, sTime) <= 0) {
     throw new Error('End time must be after start time');
   }
 
-  await meal.save();
-  return meal.toJSON();
+  const updatedMeal = await prisma.meal.update({
+    where: { id: mealId },
+    data: {
+      name: name || undefined,
+      startTime: startTime ? parseTimeToDate(startTime) : undefined,
+      endTime: endTime ? parseTimeToDate(endTime) : undefined,
+      isActive: isActive !== undefined ? isActive : undefined,
+      category: category !== undefined ? category : undefined,
+      image: image !== undefined ? (image || null) : undefined
+    }
+  });
+
+  return {
+    ...updatedMeal,
+    startTime: formatPrismaTime(updatedMeal.startTime),
+    endTime: formatPrismaTime(updatedMeal.endTime)
+  };
 };
 
 // Delete meal
 const deleteMeal = async (id) => {
-  const meal = await Meal.findByPk(id);
+  const mealId = parseInt(id);
+  const meal = await prisma.meal.findUnique({ where: { id: mealId } });
   if (!meal) {
     throw new Error('Meal not found');
   }
 
-  await meal.destroy();
+  await prisma.meal.delete({ where: { id: mealId } });
   return { message: 'Meal deleted successfully' };
 };
 
 // Get current kitchen status and next meal
 const getKitchenStatus = async () => {
   const currentTime = getCurrentTime();
-  const allMeals = await Meal.findAll({
+  const allMealsRaw = await prisma.meal.findMany({
     where: { isActive: true },
-    order: [['startTime', 'ASC']]
+    orderBy: { startTime: 'asc' }
   });
+
+  const allMeals = allMealsRaw.map(m => ({
+    ...m,
+    startTimeStr: formatPrismaTime(m.startTime),
+    endTimeStr: formatPrismaTime(m.endTime)
+  }));
 
   if (allMeals.length === 0) {
     return {
@@ -169,56 +227,46 @@ const getKitchenStatus = async () => {
     };
   }
 
-  // Find current active meal
   let currentMeal = null;
   for (const meal of allMeals) {
-    if (isTimeBetween(currentTime, meal.startTime, meal.endTime)) {
+    if (isTimeBetween(currentTime, meal.startTimeStr, meal.endTimeStr)) {
       currentMeal = meal;
       break;
     }
   }
 
-  // Find next meal
   let nextMeal = null;
   let timeUntilNextMeal = null;
 
   if (!currentMeal) {
-    // Kitchen is closed, find next meal
     for (const meal of allMeals) {
-      if (compareTime(meal.startTime, currentTime) > 0) {
+      if (compareTime(meal.startTimeStr, currentTime) > 0) {
         nextMeal = meal;
-        // Calculate time difference
         const [currentH, currentM] = currentTime.split(':').map(Number);
-        const [nextH, nextM] = meal.startTime.split(':').map(Number);
+        const [nextH, nextM] = meal.startTimeStr.split(':').map(Number);
         const currentTotal = currentH * 60 + currentM;
         const nextTotal = nextH * 60 + nextM;
         const diffMinutes = nextTotal - currentTotal;
-        const hours = Math.floor(diffMinutes / 60);
-        const minutes = diffMinutes % 60;
         timeUntilNextMeal = {
-          hours,
-          minutes,
+          hours: Math.floor(diffMinutes / 60),
+          minutes: diffMinutes % 60,
           totalMinutes: diffMinutes
         };
         break;
       }
     }
   } else {
-    // Kitchen is open, find next meal after current one ends
     for (const meal of allMeals) {
-      if (compareTime(meal.startTime, currentMeal.endTime) > 0) {
+      if (compareTime(meal.startTimeStr, currentMeal.endTimeStr) > 0) {
         nextMeal = meal;
-        // Calculate time difference from current meal end time
-        const [endH, endM] = currentMeal.endTime.split(':').map(Number);
-        const [nextH, nextM] = meal.startTime.split(':').map(Number);
+        const [endH, endM] = currentMeal.endTimeStr.split(':').map(Number);
+        const [nextH, nextM] = meal.startTimeStr.split(':').map(Number);
         const endTotal = endH * 60 + endM;
         const nextTotal = nextH * 60 + nextM;
         const diffMinutes = nextTotal - endTotal;
-        const hours = Math.floor(diffMinutes / 60);
-        const minutes = diffMinutes % 60;
         timeUntilNextMeal = {
-          hours,
-          minutes,
+          hours: Math.floor(diffMinutes / 60),
+          minutes: diffMinutes % 60,
           totalMinutes: diffMinutes
         };
         break;
@@ -231,87 +279,51 @@ const getKitchenStatus = async () => {
     currentMealId: currentMeal ? currentMeal.id : null
   };
 
-  // Check if kitchen status changed and send notifications
   if (previousKitchenStatus.isOpen !== currentStatus.isOpen) {
     try {
-      // Get all active users (students and admins)
-      const allUsers = await User.findAll({
+      const allUsers = await prisma.user.findMany({
         where: { isActive: true },
-        attributes: ['id']
+        select: { id: true }
       });
-
       const userIds = allUsers.map(u => u.id);
 
       if (currentStatus.isOpen) {
-        // Kitchen just opened
         const mealName = currentMeal ? currentMeal.name : 'Meal';
-        await Promise.all(
-          userIds.map(userId =>
-            notificationService.createNotification(
-              userId,
-              'kitchen_opened',
-              'Kitchen is Now Open',
-              `Kitchen has been opened! Current meal: ${mealName}`,
-              currentMeal ? currentMeal.id : null,
-              'meal'
-            )
-          )
-        );
+        await Promise.all(userIds.map(uId =>
+          notificationService.createNotification(uId, 'kitchen_opened', 'Kitchen is Now Open', `Kitchen has been opened! Current meal: ${mealName}`, currentMeal.id, 'meal')
+        ));
       } else {
-        // Kitchen just closed
-        await Promise.all(
-          userIds.map(userId =>
-            notificationService.createNotification(
-              userId,
-              'kitchen_closed',
-              'Kitchen is Now Closed',
-              `Kitchen has been closed. ${nextMeal ? `Next meal: ${nextMeal.name}` : 'No upcoming meals'}`,
-              null,
-              'meal'
-            )
-          )
-        );
+        await Promise.all(userIds.map(uId =>
+          notificationService.createNotification(uId, 'kitchen_closed', 'Kitchen is Now Closed', `Kitchen has been closed. ${nextMeal ? `Next meal: ${nextMeal.name}` : 'No upcoming meals'}`, null, 'meal')
+        ));
       }
     } catch (error) {
       console.error('Error creating kitchen status notification:', error);
     }
-
-    // Update previous status
     previousKitchenStatus = currentStatus;
   } else if (currentStatus.isOpen && previousKitchenStatus.currentMealId !== currentStatus.currentMealId) {
-    // Meal changed while kitchen is open
     try {
-      const allUsers = await User.findAll({
+      const allUsers = await prisma.user.findMany({
         where: { isActive: true },
-        attributes: ['id']
+        select: { id: true }
       });
-
       const userIds = allUsers.map(u => u.id);
       const mealName = currentMeal ? currentMeal.name : 'Meal';
-
-      await Promise.all(
-        userIds.map(userId =>
-          notificationService.createNotification(
-            userId,
-            'meal_changed',
-            'Meal Changed',
-            `Current meal now: ${mealName}`,
-            currentMeal ? currentMeal.id : null,
-            'meal'
-          )
-        )
-      );
+      await Promise.all(userIds.map(uId =>
+        notificationService.createNotification(uId, 'meal_changed', 'Meal Changed', `Current meal now: ${mealName}`, currentMeal.id, 'meal')
+      ));
     } catch (error) {
       console.error('Error creating meal change notification:', error);
     }
-
     previousKitchenStatus = currentStatus;
   }
 
+  const finalizeMeal = (m) => m ? { ...m, startTime: m.startTimeStr, endTime: m.endTimeStr, startTimeStr: undefined, endTimeStr: undefined } : null;
+
   return {
     isOpen: currentMeal !== null,
-    currentMeal: currentMeal ? currentMeal.toJSON() : null,
-    nextMeal: nextMeal ? nextMeal.toJSON() : null,
+    currentMeal: finalizeMeal(currentMeal),
+    nextMeal: finalizeMeal(nextMeal),
     timeUntilNextMeal,
     currentTime: currentTime
   };
@@ -325,4 +337,3 @@ module.exports = {
   deleteMeal,
   getKitchenStatus
 };
-

@@ -1,224 +1,169 @@
-const { Review, Student, User } = require('../models');
+const prisma = require('../config/prisma');
 
 // Create a new review
 const createReview = async (studentId, rating, comment) => {
-  // Validate rating
-  if (!rating || rating < 1 || rating > 5) {
+  const sId = parseInt(studentId);
+  const nRating = parseInt(rating);
+
+  if (!nRating || nRating < 1 || nRating > 5) {
     throw new Error('Rating must be between 1 and 5');
   }
 
-  // Check if student already has a review
-  const existingReview = await Review.findOne({
-    where: { studentId }
+  const existingReview = await prisma.review.findUnique({
+    where: { studentId: sId }
   });
 
   if (existingReview) {
     throw new Error('You have already submitted a review');
   }
 
-  // Create review
-  const review = await Review.create({
-    studentId,
-    rating,
-    comment: comment || null,
-    isApproved: true // Reviews are automatically approved
-  });
-
-  // Fetch review with student and user info
-  const reviewWithDetails = await Review.findByPk(review.id, {
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }
-        ]
+  return await prisma.review.create({
+    data: {
+      studentId: sId,
+      rating: nRating,
+      comment: comment || null,
+      isApproved: true
+    },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true, profileImage: true } }
+        }
       }
-    ]
+    }
   });
-
-  return reviewWithDetails;
 };
 
 // Get all reviews (for admin)
 const getAllReviews = async (page = 1, limit = 10, filters = {}) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   const where = {};
 
-  const { count, rows } = await Review.findAndCountAll({
-    where,
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
+  const [reviews, count] = await Promise.all([
+    prisma.review.findMany({
+      where,
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, name: true, email: true, profileImage: true } }
           }
-        ]
-      }
-    ],
-    order: [['createdAt', 'DESC']],
-    limit,
-    offset
-  });
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.review.count({ where })
+  ]);
 
   return {
-    reviews: rows,
+    reviews,
     pagination: {
       total: count,
-      page,
-      limit,
+      page: parseInt(page),
+      limit: parseInt(limit),
       totalPages: Math.ceil(count / limit)
     }
   };
 };
 
-// Get approved reviews for public display (landing page)
+// Get approved reviews
 const getApprovedReviews = async (limit = 10) => {
-  const reviews = await Review.findAll({
-    where: {},
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }
-        ]
+  return await prisma.review.findMany({
+    where: { isApproved: true },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true, profileImage: true } }
+        }
       }
-    ],
-    order: [['createdAt', 'DESC']],
-    limit
+    },
+    orderBy: { createdAt: 'desc' },
+    take: parseInt(limit)
   });
-
-  return reviews;
 };
 
 // Get student's own review
 const getStudentReview = async (studentId) => {
-  const review = await Review.findOne({
-    where: { studentId },
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }
-        ]
+  const sId = parseInt(studentId);
+  return await prisma.review.findUnique({
+    where: { studentId: sId },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true, profileImage: true } }
+        }
       }
-    ]
+    }
   });
-
-  return review;
 };
 
-// Update review (student can update their own review)
+// Update review
 const updateReview = async (studentId, rating, comment) => {
-  const review = await Review.findOne({
-    where: { studentId }
-  });
+  const sId = parseInt(studentId);
+  const review = await prisma.review.findUnique({ where: { studentId: sId } });
 
-  if (!review) {
-    throw new Error('Review not found');
-  }
+  if (!review) throw new Error('Review not found');
 
-  // Validate rating
-  if (rating && (rating < 1 || rating > 5)) {
+  const nRating = rating ? parseInt(rating) : undefined;
+  if (nRating && (nRating < 1 || nRating > 5)) {
     throw new Error('Rating must be between 1 and 5');
   }
 
-  // Update review
-  review.rating = rating || review.rating;
-  review.comment = comment !== undefined ? comment : review.comment;
-  review.isApproved = true; // Keep approved after update
-  await review.save();
-
-  // Fetch updated review with details
-  const updatedReview = await Review.findByPk(review.id, {
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }
-        ]
+  return await prisma.review.update({
+    where: { studentId: sId },
+    data: {
+      rating: nRating,
+      comment: comment !== undefined ? comment : undefined,
+      isApproved: true
+    },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true, profileImage: true } }
+        }
       }
-    ]
+    }
   });
-
-  return updatedReview;
 };
 
-// Approve review (admin only)
+// Approve review
 const approveReview = async (reviewId) => {
-  const review = await Review.findByPk(reviewId);
-
-  if (!review) {
-    throw new Error('Review not found');
-  }
-
-  review.isApproved = true;
-  await review.save();
-
-  return review;
+  const id = parseInt(reviewId);
+  return await prisma.review.update({
+    where: { id },
+    data: { isApproved: true }
+  });
 };
 
-// Reject/Delete review (admin only)
+// Delete review
 const deleteReview = async (reviewId) => {
-  const review = await Review.findByPk(reviewId);
-
-  if (!review) {
-    throw new Error('Review not found');
-  }
-
-  await review.destroy();
+  const id = parseInt(reviewId);
+  await prisma.review.delete({ where: { id } });
   return true;
 };
 
 // Get review statistics
 const getReviewStats = async () => {
-  const totalReviews = await Review.count();
-
-  // Calculate average rating
-  const reviews = await Review.findAll({
-    attributes: ['rating']
+  const stats = await prisma.review.aggregate({
+    _count: true,
+    _avg: { rating: true }
   });
 
-  const averageRating = reviews.length > 0
-    ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-    : 0;
+  const distRaw = await prisma.review.groupBy({
+    by: ['rating'],
+    _count: true
+  });
 
-  // Rating distribution
-  const ratingDistribution = {};
-  for (let i = 1; i <= 5; i++) {
-    ratingDistribution[i] = await Review.count({
-      where: {
-        rating: i
-      }
-    });
-  }
+  const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  distRaw.forEach(item => {
+    ratingDistribution[item.rating] = item._count;
+  });
 
   return {
-    totalReviews,
-    averageRating: Math.round(averageRating * 10) / 10,
+    totalReviews: stats._count,
+    averageRating: stats._avg.rating ? Math.round(stats._avg.rating * 10) / 10 : 0,
     ratingDistribution
   };
 };
@@ -233,4 +178,3 @@ module.exports = {
   deleteReview,
   getReviewStats
 };
-

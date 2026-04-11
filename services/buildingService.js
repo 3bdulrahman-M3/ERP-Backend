@@ -1,41 +1,44 @@
-const { Building, Room, RoomStudent } = require('../models');
+const prisma = require('../config/prisma');
 
 // Get all buildings with room count
 const getAllBuildings = async (page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   
-  const { count, rows } = await Building.findAndCountAll({
-    order: [['name', 'ASC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [buildings, count] = await Promise.all([
+    prisma.building.findMany({
+      orderBy: { name: 'asc' },
+      skip,
+      take,
+      include: {
+        _count: {
+          select: { rooms: true }
+        }
+      }
+    }),
+    prisma.building.count()
+  ]);
   
-  // Get room count for each building
-  const buildingsWithCount = await Promise.all(
-    rows.map(async (building) => {
-      const roomCount = await Room.count({
-        where: { buildingId: building.id }
-      });
-
-      const studentCount = await RoomStudent.count({
-        where: { isActive: true },
-        include: [{
-          model: Room,
-          as: 'room',
-          required: true,
-          where: { buildingId: building.id }
-        }]
+  // Get student count for each building
+  const buildingsWithStats = await Promise.all(
+    buildings.map(async (building) => {
+      const studentCount = await prisma.roomStudent.count({
+        where: { 
+          isActive: true,
+          room: { buildingId: building.id }
+        }
       });
       
-      const buildingData = building.toJSON();
-      buildingData.roomCount = roomCount;
-      buildingData.studentCount = studentCount;
-      return buildingData;
+      return {
+        ...building,
+        roomCount: building._count.rooms,
+        studentCount
+      };
     })
   );
   
   return {
-    buildings: buildingsWithCount,
+    buildings: buildingsWithStats,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -47,13 +50,16 @@ const getAllBuildings = async (page = 1, limit = 10) => {
 
 // Get building by ID
 const getBuildingById = async (id) => {
-  const building = await Building.findByPk(id, {
-    include: [{
-      model: Room,
-      as: 'rooms',
-      attributes: ['id', 'roomNumber', 'floor', 'totalBeds', 'availableBeds', 'status']
-    }]
+  const bId = parseInt(id);
+  const building = await prisma.building.findUnique({
+    where: { id: bId },
+    include: {
+      rooms: {
+        select: { id: true, roomNumber: true, floor: true, totalBeds: true, availableBeds: true, status: true }
+      }
+    }
   });
+  
   if (!building) {
     throw new Error('Building not found');
   }
@@ -68,56 +74,57 @@ const createBuilding = async (buildingData) => {
     throw new Error('Building name is required');
   }
 
-  const building = await Building.create({
-    name,
-    address: address || null,
-    mapUrl: mapUrl || null,
-    floors: floors ? parseInt(floors) : null,
-    image: image || null,
-    roomCount: 0
+  return await prisma.building.create({
+    data: {
+      name,
+      address: address || null,
+      mapUrl: mapUrl || null,
+      floors: floors ? parseInt(floors) : null,
+      image: image || null,
+      roomCount: 0
+    }
   });
-
-  return building;
 };
 
 // Update building
 const updateBuilding = async (id, buildingData) => {
-  const building = await Building.findByPk(id);
+  const bId = parseInt(id);
+  const building = await prisma.building.findUnique({ where: { id: bId } });
   if (!building) {
     throw new Error('Building not found');
   }
 
   const { name, address, mapUrl, floors, image } = buildingData;
 
-  if (name !== undefined) building.name = name;
-  if (address !== undefined) building.address = address;
-  if (mapUrl !== undefined) building.mapUrl = mapUrl || null;
-  if (floors !== undefined) building.floors = floors ? parseInt(floors) : null;
-  if (image !== undefined) building.image = image || null;
-
-  await building.save();
-  return building;
+  return await prisma.building.update({
+    where: { id: bId },
+    data: {
+      name: name !== undefined ? name : undefined,
+      address: address !== undefined ? address : undefined,
+      mapUrl: mapUrl !== undefined ? (mapUrl || null) : undefined,
+      floors: floors !== undefined ? (floors ? parseInt(floors) : null) : undefined,
+      image: image !== undefined ? (image || null) : undefined
+    }
+  });
 };
 
 // Delete building
 const deleteBuilding = async (id) => {
-  const building = await Building.findByPk(id, {
-    include: [{
-      model: Room,
-      as: 'rooms'
-    }]
+  const bId = parseInt(id);
+  const building = await prisma.building.findUnique({
+    where: { id: bId },
+    include: { rooms: { take: 1 } }
   });
 
   if (!building) {
     throw new Error('Building not found');
   }
 
-  // Check if building has rooms
   if (building.rooms && building.rooms.length > 0) {
     throw new Error('Cannot delete building with existing rooms. Please remove or reassign rooms first.');
   }
 
-  await building.destroy();
+  await prisma.building.delete({ where: { id: bId } });
   return { message: 'Building deleted successfully' };
 };
 
@@ -128,4 +135,3 @@ module.exports = {
   updateBuilding,
   deleteBuilding
 };
-

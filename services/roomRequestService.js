@@ -1,229 +1,123 @@
-const { RoomRequest, Room, Student, User, Service, Building, RoomStudent, Preference, College } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../config/prisma');
 const notificationService = require('./notificationService');
 const preferenceService = require('./preferenceService');
 const roomService = require('./roomService');
 
 // Create a room request
 const createRoomRequest = async (studentId, roomId, notes = null) => {
-  // Check if student exists
-  const student = await Student.findByPk(studentId);
-  if (!student) {
-    throw new Error('Student not found');
-  }
+  const sId = parseInt(studentId);
+  const rId = parseInt(roomId);
 
-  // Check if room exists
-  const room = await Room.findByPk(roomId);
-  if (!room) {
-    throw new Error('Room not found');
-  }
+  const student = await prisma.student.findUnique({ where: { id: sId } });
+  if (!student) throw new Error('Student not found');
 
-  // Check if room has available beds
-  if (room.availableBeds <= 0) {
-    throw new Error('Room has no available beds');
-  }
+  const room = await prisma.room.findUnique({ where: { id: rId } });
+  if (!room) throw new Error('Room not found');
+  if (room.availableBeds <= 0) throw new Error('Room has no available beds');
 
-  // Check if student already has a pending request for this room
-  const existingRequest = await RoomRequest.findOne({
-    where: {
-      studentId,
-      roomId,
-      status: 'pending'
-    }
+  const existingRequest = await prisma.roomRequest.findFirst({
+    where: { studentId: sId, roomId: rId, status: 'pending' }
   });
+  if (existingRequest) throw new Error('You already have a pending request for this room');
 
-  if (existingRequest) {
-    throw new Error('You already have a pending request for this room');
-  }
-
-  // Check if student is already in this room
-  const existingAssignment = await RoomStudent.findOne({
-    where: {
-      studentId,
-      roomId,
-      isActive: true
-    }
+  const existingAssignment = await prisma.roomStudent.findFirst({
+    where: { studentId: sId, roomId: rId, isActive: true }
   });
+  if (existingAssignment) throw new Error('You are already assigned to this room');
 
-  if (existingAssignment) {
-    throw new Error('You are already assigned to this room');
-  }
-
-  // Create the request
-  const request = await RoomRequest.create({
-    studentId,
-    roomId,
-    status: 'pending',
-    notes: notes || null
-  });
-
-  // Reload with relations
-  await request.reload({
-    include: [
-      {
-        model: Room,
-        as: 'room',
-        include: [
-          {
-            model: Service,
-            as: 'services',
-            attributes: ['id', 'name', 'description', 'icon'],
-            through: { attributes: [] }
-          },
-          {
-            model: Building,
-            as: 'buildingInfo',
-            attributes: ['id', 'name', 'address']
-          }
-        ]
+  const request = await prisma.roomRequest.create({
+    data: {
+      studentId: sId,
+      roomId: rId,
+      status: 'pending',
+      notes: notes || null
+    },
+    include: {
+      room: {
+        include: {
+          services: { select: { id: true, name: true, description: true, icon: true } },
+          buildingInfo: { select: { id: true, name: true, address: true } }
+        }
       },
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email']
-          },
-          {
-            model: College,
-            as: 'college',
-            attributes: ['id', 'name'],
-            required: false
-          }
-        ]
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          college: { select: { id: true, name: true } }
+        }
       }
-    ]
+    }
   });
 
-  // Notify admins
   try {
-    await notificationService.createNotificationForAdmins(
-      'room_request',
-      'New Room Request',
-      `Student ${student.name} has requested room ${room.roomNumber}`,
-      room.id, // Use roomId instead of request.id for navigation
-      'room'
-    );
+    await notificationService.createNotificationForAdmins('room_request', 'New Room Request', `Student ${student.name} has requested room ${room.roomNumber}`, rId, 'room');
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return request.toJSON();
+  return request;
 };
 
 // Get rooms matching student preferences
 const getMatchingRooms = async (userId, page = 1, limit = 10) => {
-  // Get student
-  const user = await User.findByPk(userId, {
-    include: [{
-      model: Student,
-      as: 'student',
-      required: true
-    }]
+  const uId = parseInt(userId);
+  const user = await prisma.user.findUnique({
+    where: { id: uId },
+    include: { student: true }
   });
 
-  if (!user || !user.student) {
-    throw new Error('Student not found');
-  }
-
+  if (!user || !user.student) throw new Error('Student not found');
   const student = user.student;
 
-  // Get student preferences
-  const preferences = await preferenceService.getPreferences(userId);
+  const preferences = await preferenceService.getPreferences(uId);
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
 
-  // Build query for matching rooms
-  const whereClause = {
-    status: { [Op.in]: ['available', 'occupied'] } // Only show available or occupied rooms
+  const where = {
+    status: { in: ['available', 'occupied'] }
   };
+  if (preferences.roomType) where.roomType = preferences.roomType;
 
-  // If student has room type preference, filter by it
-  if (preferences.roomType) {
-    whereClause.roomType = preferences.roomType;
-  }
-
-  // Get all rooms
-  const offset = (page - 1) * limit;
-  const { count, rows } = await Room.findAndCountAll({
-    where: whereClause,
-    include: [
-      {
-        model: Service,
-        as: 'services',
-        attributes: ['id', 'name', 'description', 'icon'],
-        through: { attributes: [] }
-      },
-      {
-        model: Building,
-        as: 'buildingInfo',
-        attributes: ['id', 'name', 'address'],
-        required: false
-      },
-      {
-        model: RoomStudent,
-        as: 'roomStudents',
-        where: { isActive: true },
-        required: false,
-        attributes: ['id']
-      }
-    ],
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['roomNumber', 'ASC']]
+  let rooms = await prisma.room.findMany({
+    where,
+    include: {
+      services: { select: { id: true, name: true, description: true, icon: true } },
+      buildingInfo: { select: { id: true, name: true, address: true } },
+      roomStudents: { where: { isActive: true }, select: { id: true } }
+    },
+    orderBy: { roomNumber: 'asc' },
+    skip,
+    take
   });
 
   // Filter rooms by service preferences
-  let matchingRooms = rows;
   if (preferences.preferredServices && preferences.preferredServices.length > 0) {
-    matchingRooms = rows.filter(room => {
+    rooms = rooms.filter(room => {
       const roomServiceIds = room.services.map(s => s.id);
-      return preferences.preferredServices.some(prefServiceId => 
-        roomServiceIds.includes(prefServiceId)
-      );
+      return preferences.preferredServices.some(p => roomServiceIds.includes(p));
     });
   }
 
-  // Get rooms where student is currently assigned (active room)
-  const studentAssignments = await RoomStudent.findAll({
-    where: {
-      studentId: student.id,
-      isActive: true
-    },
-    attributes: ['roomId']
+  const studentAssignments = await prisma.roomStudent.findMany({
+    where: { studentId: student.id, isActive: true },
+    select: { roomId: true }
   });
-  const assignedRoomIds = studentAssignments.map(a => a.roomId);
+  const excludedRoomIds = studentAssignments.map(a => a.roomId);
 
-  // Only exclude the room where student is currently assigned
-  const excludedRoomIds = assignedRoomIds;
-
-  // Get student's existing requests for these rooms
-  const roomIds = matchingRooms.map(r => r.id);
-  const studentRequests = await RoomRequest.findAll({
-    where: {
-      studentId: student.id,
-      roomId: { [Op.in]: roomIds }
-    }
+  const studentRequests = await prisma.roomRequest.findMany({
+    where: { studentId: student.id, roomId: { in: rooms.map(r => r.id) } }
   });
 
   const requestMap = {};
-  studentRequests.forEach(req => {
-    requestMap[req.roomId] = req.status;
-  });
+  studentRequests.forEach(req => { requestMap[req.roomId] = req.status; });
 
-  // Filter out rooms where student is assigned or request was accepted
-  const availableRooms = matchingRooms.filter(room => 
-    !excludedRoomIds.includes(room.id)
-  );
-
-  // Format rooms with request status
-  const formattedRooms = availableRooms.map(room => {
-    const roomData = room.toJSON();
-    roomData.occupiedBeds = room.roomStudents ? room.roomStudents.length : 0;
-    roomData.hasPendingRequest = requestMap[room.id] === 'pending';
-    roomData.requestStatus = requestMap[room.id] || null;
-    return roomData;
-  });
+  const formattedRooms = rooms
+    .filter(room => !excludedRoomIds.includes(room.id))
+    .map(room => ({
+      ...room,
+      occupiedBeds: room.roomStudents.length,
+      hasPendingRequest: requestMap[room.id] === 'pending',
+      requestStatus: requestMap[room.id] || null
+    }));
 
   return {
     rooms: formattedRooms,
@@ -238,35 +132,30 @@ const getMatchingRooms = async (userId, page = 1, limit = 10) => {
 
 // Get student's room requests
 const getStudentRequests = async (studentId, page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
-  const { count, rows } = await RoomRequest.findAndCountAll({
-    where: { studentId },
-    include: [
-      {
-        model: Room,
-        as: 'room',
-        include: [
-          {
-            model: Service,
-            as: 'services',
-            attributes: ['id', 'name', 'description', 'icon'],
-            through: { attributes: [] }
-          },
-          {
-            model: Building,
-            as: 'buildingInfo',
-            attributes: ['id', 'name', 'address']
+  const sId = parseInt(studentId);
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
+
+  const [requests, count] = await Promise.all([
+    prisma.roomRequest.findMany({
+      where: { studentId: sId },
+      include: {
+        room: {
+          include: {
+            services: { select: { id: true, name: true, description: true, icon: true } },
+            buildingInfo: { select: { id: true, name: true, address: true } }
           }
-        ]
-      }
-    ],
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['createdAt', 'DESC']]
-  });
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.roomRequest.count({ where: { studentId: sId } })
+  ]);
 
   return {
-    requests: rows.map(r => r.toJSON()),
+    requests,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -276,37 +165,32 @@ const getStudentRequests = async (studentId, page = 1, limit = 10) => {
   };
 };
 
-// Get room requests for a specific room (for admin)
+// Get room requests
 const getRoomRequests = async (roomId, page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
-  const { count, rows } = await RoomRequest.findAndCountAll({
-    where: { roomId },
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email']
-          },
-          {
-            model: College,
-            as: 'college',
-            attributes: ['id', 'name'],
-            required: false
+  const rId = parseInt(roomId);
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
+
+  const [requests, count] = await Promise.all([
+    prisma.roomRequest.findMany({
+      where: { roomId: rId },
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            college: { select: { id: true, name: true } }
           }
-        ]
-      }
-    ],
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['createdAt', 'DESC']]
-  });
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.roomRequest.count({ where: { roomId: rId } })
+  ]);
 
   return {
-    requests: rows.map(r => r.toJSON()),
+    requests,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -318,150 +202,86 @@ const getRoomRequests = async (roomId, page = 1, limit = 10) => {
 
 // Accept a room request
 const acceptRoomRequest = async (requestId) => {
-  const { Room } = require('../models');
-  
-  const request = await RoomRequest.findByPk(requestId, {
-    include: [
-      {
-        model: Room,
-        as: 'room'
-      },
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email']
-          }
-        ]
-      }
-    ]
-  });
-
-  if (!request) {
-    throw new Error('Request not found');
-  }
-
-  if (request.status !== 'pending') {
-    throw new Error('Request is not pending');
-  }
-
-  // Check if room still has available beds
-  if (request.room.availableBeds <= 0) {
-    throw new Error('Room has no available beds');
-  }
-
-  // Check if student is already in another room
-  const existingAssignment = await RoomStudent.findOne({
-    where: {
-      studentId: request.studentId,
-      isActive: true
+  const rId = parseInt(requestId);
+  const request = await prisma.roomRequest.findUnique({
+    where: { id: rId },
+    include: {
+      room: true,
+      student: { include: { user: { select: { id: true, name: true, email: true } } } }
     }
   });
 
-  // If student is in another room, remove them
+  if (!request) throw new Error('Request not found');
+  if (request.status !== 'pending') throw new Error('Request is not pending');
+  if (request.room.availableBeds <= 0) throw new Error('Room has no available beds');
+
+  const existingAssignment = await prisma.roomStudent.findFirst({
+    where: { studentId: request.studentId, isActive: true }
+  });
+
   if (existingAssignment) {
-    existingAssignment.isActive = false;
-    existingAssignment.checkOutDate = new Date();
-    await existingAssignment.save();
-
-    // Update old room's available beds
-    const oldRoom = await Room.findByPk(existingAssignment.roomId);
-    if (oldRoom) {
-      oldRoom.availableBeds = (oldRoom.availableBeds || 0) + 1;
-      if (oldRoom.availableBeds === oldRoom.totalBeds) {
-        oldRoom.status = 'available';
-      }
-      await oldRoom.save();
-    }
+    await prisma.$transaction(async (tx) => {
+      await tx.roomStudent.update({
+        where: { id: existingAssignment.id },
+        data: { isActive: false, checkOutDate: new Date() }
+      });
+      await tx.room.update({
+        where: { id: existingAssignment.roomId },
+        data: {
+          availableBeds: { increment: 1 },
+          status: 'available' // Simplification
+        }
+      });
+    });
   }
 
   await roomService.assignStudentToRoom(request.roomId, request.studentId, new Date(), { forceCheckout: true });
 
-  // Update request status
-  request.status = 'accepted';
-  await request.save();
+  await prisma.roomRequest.update({
+    where: { id: rId },
+    data: { status: 'accepted' }
+  });
 
-  // Reject all other pending requests for this student
-  await RoomRequest.update(
-    { status: 'rejected' },
-    {
-      where: {
-        studentId: request.studentId,
-        status: 'pending',
-        id: { [Op.ne]: requestId }
-      }
-    }
-  );
+  await prisma.roomRequest.updateMany({
+    where: { studentId: request.studentId, status: 'pending', NOT: { id: rId } },
+    data: { status: 'rejected' }
+  });
 
-  // Notify student
   try {
-    await notificationService.createNotification(
-      request.student.userId,
-      'room_request_accepted',
-      'Room Request Approved',
-      `Your request for room ${request.room.roomNumber} has been approved`,
-      request.roomId,
-      'room'
-    );
+    await notificationService.createNotification(request.student.userId, 'room_request_accepted', 'Room Request Approved', `Your request for room ${request.room.roomNumber} has been approved`, request.roomId, 'room');
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return request.toJSON();
+  return request;
 };
 
 // Reject a room request
 const rejectRoomRequest = async (requestId) => {
-  const request = await RoomRequest.findByPk(requestId, {
-    include: [
-      {
-        model: Room,
-        as: 'room'
-      },
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email']
-          }
-        ]
-      }
-    ]
+  const rId = parseInt(requestId);
+  const request = await prisma.roomRequest.findUnique({
+    where: { id: rId },
+    include: {
+      room: true,
+      student: { include: { user: { select: { id: true, name: true, email: true } } } }
+    }
   });
 
-  if (!request) {
-    throw new Error('Request not found');
-  }
+  if (!request) throw new Error('Request not found');
+  if (request.status !== 'pending') throw new Error('Request is not pending');
 
-  if (request.status !== 'pending') {
-    throw new Error('Request is not pending');
-  }
+  const updatedRequest = await prisma.roomRequest.update({
+    where: { id: rId },
+    data: { status: 'rejected' }
+  });
 
-  // Update request status
-  request.status = 'rejected';
-  await request.save();
-
-  // Notify student
   try {
-    await notificationService.createNotification(
-      request.student.userId,
-      'room_request_rejected',
-      'Room Request Rejected',
-      `Your request for room ${request.room.roomNumber} has been rejected`,
-      request.roomId,
-      'room'
-    );
+    await notificationService.createNotification(request.student.userId, 'room_request_rejected', 'Room Request Rejected', `Your request for room ${request.room.roomNumber} has been rejected`, request.roomId, 'room');
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return request.toJSON();
+  return updatedRequest;
 };
 
 module.exports = {
@@ -472,4 +292,3 @@ module.exports = {
   acceptRoomRequest,
   rejectRoomRequest
 };
-

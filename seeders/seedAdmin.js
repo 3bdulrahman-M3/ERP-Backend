@@ -1,28 +1,32 @@
-const { User } = require('../models');
-const { sequelize } = require('../config/database');
+const prisma = require('../config/prisma');
+const bcrypt = require('bcryptjs');
 
-const seedAdmin = async (closeConnection = false) => {
+const seedAdmin = async () => {
   try {
     console.log('🌱 Starting seeder...');
 
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ where: { email: 'admin@erp.com' } });
+    const existingAdmin = await prisma.user.findUnique({ 
+      where: { email: 'admin@erp.com' } 
+    });
 
     if (existingAdmin) {
       console.log('⏭️  Admin account already exists');
-      if (closeConnection) {
-        await sequelize.close();
-      }
       return;
     }
 
+    // Hash password
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+
     // Create admin user
-    const admin = await User.create({
-      name: 'Admin',
-      email: 'admin@erp.com',
-      password: 'admin123',
-      role: 'admin',
-      isActive: true
+    await prisma.user.create({
+      data: {
+        name: 'Admin',
+        email: 'admin@erp.com',
+        password: hashedPassword,
+        role: 'admin',
+        isActive: true
+      }
     });
 
     console.log('✅ Admin account created successfully');
@@ -30,23 +34,15 @@ const seedAdmin = async (closeConnection = false) => {
     console.log('🔑 Password: admin123');
     console.log('⚠️  Please change the password after first login');
 
-    if (closeConnection) {
-      await sequelize.close();
-    }
   } catch (error) {
     console.error('❌ Error running seeder:', error);
-    if (closeConnection) {
-      await sequelize.close();
-      process.exit(1);
-    }
     throw error;
   }
 };
 
-// Run seeder if called directly (close connection when run standalone)
+// Run seeder if called directly
 if (require.main === module) {
-  seedAdmin(true);
+  seedAdmin().then(() => process.exit(0)).catch(() => process.exit(1));
 }
 
 module.exports = seedAdmin;
-

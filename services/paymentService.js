@@ -1,5 +1,4 @@
-const { Op } = require('sequelize');
-const { Payment, RoomStudent, Room, Student, User } = require('../models');
+const prisma = require('../config/prisma');
 
 const calculatePaymentStatus = (amountDue = 0, amountPaid = 0) => {
   const due = Number(amountDue) || 0;
@@ -32,7 +31,7 @@ const normalizePaymentValues = (paymentData = {}) => {
     remainingAmount,
     status,
     paymentMethod: paymentData.paymentMethod || 'cash',
-    paymentDate: paymentData.paymentDate || new Date(),
+    paymentDate: paymentData.paymentDate ? new Date(paymentData.paymentDate) : new Date(),
     notes: paymentData.notes || null
   };
 };
@@ -41,7 +40,9 @@ const resolveAssignmentContext = async ({ roomStudentId, roomId, studentId }) =>
   let assignment = null;
 
   if (roomStudentId) {
-    assignment = await RoomStudent.findByPk(roomStudentId);
+    assignment = await prisma.roomStudent.findUnique({
+      where: { id: parseInt(roomStudentId) }
+    });
     if (!assignment) {
       throw new Error('Room assignment not found');
     }
@@ -49,8 +50,8 @@ const resolveAssignmentContext = async ({ roomStudentId, roomId, studentId }) =>
 
   return {
     assignment,
-    roomId: roomId || assignment?.roomId,
-    studentId: studentId || assignment?.studentId
+    roomId: roomId ? parseInt(roomId) : assignment?.roomId,
+    studentId: studentId ? parseInt(studentId) : assignment?.studentId
   };
 };
 
@@ -67,9 +68,11 @@ const createOrUpdatePayment = async (paymentData) => {
 
   const normalized = normalizePaymentValues(paymentData);
 
-  let payment = await Payment.findOne({ where: { roomStudentId } });
-  if (payment) {
-    Object.assign(payment, {
+  const rsId = parseInt(roomStudentId);
+
+  return await prisma.payment.upsert({
+    where: { roomStudentId: rsId },
+    update: {
       roomId: context.roomId,
       studentId: context.studentId,
       amountDue: normalized.amountDue,
@@ -79,44 +82,50 @@ const createOrUpdatePayment = async (paymentData) => {
       paymentMethod: normalized.paymentMethod,
       paymentDate: normalized.paymentDate,
       notes: normalized.notes
-    });
-    await payment.save();
-    return payment.toJSON();
-  }
-
-  payment = await Payment.create({
-    roomId: context.roomId,
-    studentId: context.studentId,
-    roomStudentId,
-    ...normalized
+    },
+    create: {
+      roomStudentId: rsId,
+      roomId: context.roomId,
+      studentId: context.studentId,
+      amountDue: normalized.amountDue,
+      amountPaid: normalized.amountPaid,
+      remainingAmount: normalized.remainingAmount,
+      status: normalized.status,
+      paymentMethod: normalized.paymentMethod,
+      paymentDate: normalized.paymentDate,
+      notes: normalized.notes
+    }
   });
-
-  return payment.toJSON();
 };
 
 const updatePayment = async (paymentId, paymentData) => {
-  const payment = await Payment.findByPk(paymentId);
+  const id = parseInt(paymentId);
+  const payment = await prisma.payment.findUnique({ where: { id } });
   if (!payment) {
     throw new Error('Payment not found');
   }
 
   const normalized = normalizePaymentValues(paymentData);
-  Object.assign(payment, {
-    amountDue: normalized.amountDue ?? payment.amountDue,
-    amountPaid: normalized.amountPaid ?? payment.amountPaid,
-    remainingAmount: normalized.remainingAmount ?? payment.remainingAmount,
-    status: normalized.status ?? payment.status,
-    paymentMethod: normalized.paymentMethod ?? payment.paymentMethod,
-    paymentDate: normalized.paymentDate ?? payment.paymentDate,
-    notes: normalized.notes ?? payment.notes
+  
+  return await prisma.payment.update({
+    where: { id },
+    data: {
+      amountDue: paymentData.amountDue !== undefined ? normalized.amountDue : undefined,
+      amountPaid: paymentData.amountPaid !== undefined ? normalized.amountPaid : undefined,
+      remainingAmount: (paymentData.amountDue !== undefined || paymentData.amountPaid !== undefined) 
+        ? Math.max(normalized.amountDue - normalized.amountPaid, 0) 
+        : undefined,
+      status: normalized.status,
+      paymentMethod: paymentData.paymentMethod || undefined,
+      paymentDate: paymentData.paymentDate ? normalized.paymentDate : undefined,
+      notes: paymentData.notes ?? undefined
+    }
   });
-
-  await payment.save();
-  return payment.toJSON();
 };
 
 const addPayment = async (paymentId, additionalPaymentData) => {
-  const payment = await Payment.findByPk(paymentId);
+  const id = parseInt(paymentId);
+  const payment = await prisma.payment.findUnique({ where: { id } });
   if (!payment) {
     throw new Error('Payment not found');
   }
@@ -132,19 +141,23 @@ const addPayment = async (paymentId, additionalPaymentData) => {
   const remainingAmount = Math.max(amountDue - newAmountPaid, 0);
   const status = calculatePaymentStatus(amountDue, newAmountPaid);
 
-  Object.assign(payment, {
-    amountPaid: newAmountPaid,
-    remainingAmount,
-    status,
-    paymentMethod: additionalPaymentData.paymentMethod || payment.paymentMethod,
-    paymentDate: additionalPaymentData.paymentDate || new Date(),
-    notes: additionalPaymentData.notes 
-      ? `${payment.notes || ''}\n${new Date().toLocaleString('ar-EG')}: ${additionalPaymentData.notes}`.trim()
-      : payment.notes
-  });
+  let newNotes = payment.notes || '';
+  if (additionalPaymentData.notes) {
+    const timestamp = new Date().toLocaleString('ar-EG');
+    newNotes = `${newNotes}\n${timestamp}: ${additionalPaymentData.notes}`.trim();
+  }
 
-  await payment.save();
-  return payment.toJSON();
+  return await prisma.payment.update({
+    where: { id },
+    data: {
+      amountPaid: newAmountPaid,
+      remainingAmount,
+      status,
+      paymentMethod: additionalPaymentData.paymentMethod || payment.paymentMethod,
+      paymentDate: additionalPaymentData.paymentDate ? new Date(additionalPaymentData.paymentDate) : new Date(),
+      notes: newNotes
+    }
+  });
 };
 
 const buildPaymentFilters = (filters = {}) => {
@@ -159,67 +172,75 @@ const buildPaymentFilters = (filters = {}) => {
   }
 
   if (filters.roomId) {
-    where.roomId = filters.roomId;
+    where.roomId = parseInt(filters.roomId);
   }
 
   if (filters.studentId) {
-    where.studentId = filters.studentId;
+    where.studentId = parseInt(filters.studentId);
   }
 
-  if (filters.startDate && filters.endDate) {
-    where.paymentDate = {
-      [Op.between]: [new Date(filters.startDate), new Date(filters.endDate)]
-    };
-  } else if (filters.startDate) {
-    where.paymentDate = {
-      [Op.gte]: new Date(filters.startDate)
-    };
-  } else if (filters.endDate) {
-    where.paymentDate = {
-      [Op.lte]: new Date(filters.endDate)
-    };
+  if (filters.startDate || filters.endDate) {
+    where.paymentDate = {};
+    if (filters.startDate) {
+      where.paymentDate.gte = new Date(filters.startDate);
+    }
+    if (filters.endDate) {
+      where.paymentDate.lte = new Date(filters.endDate);
+    }
   }
 
   return where;
 };
 
 const getPayments = async (filters = {}, page = 1, limit = 20) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   const where = buildPaymentFilters(filters);
 
-  const { count, rows } = await Payment.findAndCountAll({
-    where,
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['paymentDate', 'DESC']],
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'email'],
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email']
+  const [payments, count] = await Promise.all([
+    prisma.payment.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { paymentDate: 'desc' },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
           }
-        ]
-      },
-      {
-        model: Room,
-        as: 'room',
-        attributes: ['id', 'roomNumber', 'floor', 'roomType']
-      },
-      {
-        model: RoomStudent,
-        as: 'assignment',
-        attributes: ['id', 'checkInDate', 'checkOutDate', 'isActive']
+        },
+        room: {
+          select: {
+            id: true,
+            roomNumber: true,
+            floor: true,
+            roomType: true
+          }
+        },
+        assignment: {
+          select: {
+            id: true,
+            checkInDate: true,
+            checkOutDate: true,
+            isActive: true
+          }
+        }
       }
-    ]
-  });
+    }),
+    prisma.payment.count({ where })
+  ]);
 
   return {
-    payments: rows.map(row => row.toJSON()),
+    payments,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -232,26 +253,32 @@ const getPayments = async (filters = {}, page = 1, limit = 20) => {
 const getFinancialReport = async (filters = {}) => {
   const where = buildPaymentFilters(filters);
 
-  const payments = await Payment.findAll({
+  const payments = await prisma.payment.findMany({
     where,
-    order: [['paymentDate', 'DESC']],
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'email'],
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email']
-        }]
+    orderBy: { paymentDate: 'desc' },
+    include: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          }
+        }
       },
-      {
-        model: Room,
-        as: 'room',
-        attributes: ['id', 'roomNumber', 'roomType']
+      room: {
+        select: {
+          id: true,
+          roomNumber: true,
+          roomType: true
+        }
       }
-    ]
+    }
   });
 
   const totals = payments.reduce((acc, payment) => {
@@ -282,7 +309,7 @@ const getFinancialReport = async (filters = {}) => {
   });
 
   return {
-    payments: payments.map(payment => payment.toJSON()),
+    payments,
     totals
   };
 };
@@ -295,4 +322,3 @@ module.exports = {
   getFinancialReport,
   calculatePaymentStatus
 };
-

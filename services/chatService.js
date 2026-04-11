@@ -1,75 +1,59 @@
-const { Conversation, Message, Student, User } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../config/prisma');
 const notificationService = require('./notificationService');
 
 // Get or create conversation for a student
 const getOrCreateConversation = async (studentId, adminId = null) => {
-  let conversation = await Conversation.findOne({
-    where: { studentId },
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'profileImage'],
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }]
+  const sId = parseInt(studentId);
+  const aId = adminId ? parseInt(adminId) : null;
+
+  let conversation = await prisma.conversation.findUnique({
+    where: { studentId: sId },
+    include: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+          user: { select: { id: true, name: true, email: true, profileImage: true } }
+        }
       },
-      {
-        model: User,
-        as: 'admin',
-        attributes: ['id', 'name', 'email', 'profileImage']
-      }
-    ]
+      admin: { select: { id: true, name: true, email: true, profileImage: true } }
+    }
   });
 
   if (!conversation) {
-    conversation = await Conversation.create({
-      studentId,
-      adminId
-    });
-    await conversation.reload({
-      include: [
-        {
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'profileImage'],
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }]
+    conversation = await prisma.conversation.create({
+      data: {
+        studentId: sId,
+        adminId: aId
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            profileImage: true,
+            user: { select: { id: true, name: true, email: true, profileImage: true } }
+          }
         },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }
-      ]
+        admin: { select: { id: true, name: true, email: true, profileImage: true } }
+      }
     });
-  } else if (adminId && !conversation.adminId) {
-    conversation.adminId = adminId;
-    await conversation.save();
-    await conversation.reload({
-      include: [
-        {
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'profileImage'],
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }]
+  } else if (aId && !conversation.adminId) {
+    conversation = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { adminId: aId },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            profileImage: true,
+            user: { select: { id: true, name: true, email: true, profileImage: true } }
+          }
         },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }
-      ]
+        admin: { select: { id: true, name: true, email: true, profileImage: true } }
+      }
     });
   }
 
@@ -78,23 +62,17 @@ const getOrCreateConversation = async (studentId, adminId = null) => {
 
 // Get conversation by ID
 const getConversationById = async (conversationId, userId, userRole) => {
-  const conversation = await Conversation.findByPk(conversationId, {
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }]
+  const cId = parseInt(conversationId);
+  const uId = parseInt(userId);
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: cId },
+    include: {
+      student: {
+        include: { user: { select: { id: true, name: true, email: true, profileImage: true } } }
       },
-      {
-        model: User,
-        as: 'admin',
-        attributes: ['id', 'name', 'email', 'profileImage']
-      }
-    ]
+      admin: { select: { id: true, name: true, email: true, profileImage: true } }
+    }
   });
 
   if (!conversation) {
@@ -102,151 +80,132 @@ const getConversationById = async (conversationId, userId, userRole) => {
   }
 
   // Check permissions
-  if (userRole === 'student' && conversation.studentId !== userId) {
-    throw new Error('Unauthorized access to conversation');
-  }
-
-  return conversation;
-};
-
-// Get all conversations (for admin) or student's conversation
-const getAllConversations = async (userId, userRole) => {
-  let conversations;
-  
-  if (userRole === 'admin') {
-    conversations = await Conversation.findAll({
-      include: [
-        {
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'profileImage'],
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }]
-        },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }
-      ],
-      order: [['lastMessageAt', 'DESC NULLS LAST'], ['createdAt', 'DESC']]
-    });
-  } else {
-    // Student can only see their own conversation
-    const student = await Student.findOne({ where: { userId } });
-    if (!student) {
-      return [];
-    }
-
-    conversations = await Conversation.findAll({
-      where: { studentId: student.id },
-      include: [
-        {
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'profileImage'],
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'profileImage']
-          }]
-        },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email', 'profileImage']
-        }
-      ],
-      order: [['lastMessageAt', 'DESC NULLS LAST'], ['createdAt', 'DESC']]
-    });
-  }
-
-  // Get last message for each conversation
-  const conversationsWithLastMessage = await Promise.all(
-    conversations.map(async (conversation) => {
-      const lastMessage = await Message.findOne({
-        where: { conversationId: conversation.id },
-        order: [['createdAt', 'DESC']],
-        attributes: ['content']
-      });
-
-      const conversationData = conversation.toJSON();
-      if (lastMessage) {
-        conversationData.lastMessage = lastMessage.content;
-      } else {
-        conversationData.lastMessage = null;
-      }
-
-      return conversationData;
-    })
-  );
-
-  return conversationsWithLastMessage;
-};
-
-// Get messages for a conversation
-const getMessages = async (conversationId, userId, userRole, page = 1, limit = 50) => {
-  const offset = (page - 1) * limit;
-
-  // Get conversation with student info
-  const conversation = await Conversation.findByPk(conversationId, {
-    include: [{
-      model: Student,
-      as: 'student',
-      attributes: ['id', 'name', 'profileImage', 'userId']
-    }]
-  });
-
-  if (!conversation) {
-    throw new Error('Conversation not found');
-  }
-
-  // Verify access
   if (userRole === 'student') {
-    const student = await Student.findOne({ where: { userId } });
+    const student = await prisma.student.findUnique({ where: { userId: uId } });
     if (!student || conversation.studentId !== student.id) {
       throw new Error('Unauthorized access to conversation');
     }
   }
 
-  const { count, rows } = await Message.findAndCountAll({
-    where: { conversationId },
-    include: [{
-      model: User,
-      as: 'sender',
-      attributes: ['id', 'name', 'email', 'profileImage']
-    }],
-    order: [['createdAt', 'DESC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  return conversation;
+};
 
-  // Add student profile image to messages from students
-  if (conversation && conversation.student) {
-    rows.forEach(message => {
-      if (message.senderRole === 'student' && message.senderId === conversation.student.userId) {
-        message.sender.profileImage = conversation.student.profileImage;
-      }
+// Get all conversations
+const getAllConversations = async (userId, userRole) => {
+  const uId = parseInt(userId);
+  let conversations;
+  
+  if (userRole === 'admin') {
+    conversations = await prisma.conversation.findMany({
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            profileImage: true,
+            user: { select: { id: true, name: true, email: true, profileImage: true } }
+          }
+        },
+        admin: { select: { id: true, name: true, email: true, profileImage: true } },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { lastMessageAt: 'desc' }
+    });
+  } else {
+    const student = await prisma.student.findUnique({ where: { userId: uId } });
+    if (!student) return [];
+
+    conversations = await prisma.conversation.findMany({
+      where: { studentId: student.id },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            profileImage: true,
+            user: { select: { id: true, name: true, email: true, profileImage: true } }
+          }
+        },
+        admin: { select: { id: true, name: true, email: true, profileImage: true } },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { lastMessageAt: 'desc' }
     });
   }
 
-  // Mark messages as read if user is not the sender
-  const unreadMessageIds = rows
-    .filter(msg => msg.senderId !== userId && !msg.isRead)
+  return conversations.map(conv => {
+    const data = { ...conv };
+    data.lastMessage = conv.messages && conv.messages.length > 0 ? conv.messages[0].content : null;
+    delete data.messages;
+    return data;
+  });
+};
+
+// Get messages
+const getMessages = async (conversationId, userId, userRole, page = 1, limit = 50) => {
+  const cId = parseInt(conversationId);
+  const uId = parseInt(userId);
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: cId },
+    include: {
+      student: { select: { id: true, name: true, profileImage: true, userId: true } }
+    }
+  });
+
+  if (!conversation) throw new Error('Conversation not found');
+
+  if (userRole === 'student') {
+    const student = await prisma.student.findUnique({ where: { userId: uId } });
+    if (!student || conversation.studentId !== student.id) {
+      throw new Error('Unauthorized access to conversation');
+    }
+  }
+
+  const [messages, count] = await Promise.all([
+    prisma.message.findMany({
+      where: { conversationId: cId },
+      include: {
+        sender: { select: { id: true, name: true, email: true, profileImage: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.message.count({ where: { conversationId: cId } })
+  ]);
+
+  // Adjust profile image for student messages
+  const processedMessages = messages.map(msg => {
+    const data = { ...msg };
+    if (data.senderRole === 'student' && data.senderId === conversation.student.userId) {
+      data.sender = { ...data.sender, profileImage: conversation.student.profileImage };
+    }
+    return data;
+  });
+
+  // Mark messages as read
+  const unreadMessageIds = processedMessages
+    .filter(msg => msg.senderId !== uId && !msg.isRead)
     .map(msg => msg.id);
 
   if (unreadMessageIds.length > 0) {
-    await Message.update(
-      { isRead: true },
-      { where: { id: { [Op.in]: unreadMessageIds } } }
-    );
+    await prisma.message.updateMany({
+      where: { id: { in: unreadMessageIds } },
+      data: { isRead: true }
+    });
   }
 
   return {
-    messages: rows.reverse(), // Reverse to show oldest first
+    messages: processedMessages.reverse(),
     pagination: {
       total: count,
       page: parseInt(page),
@@ -258,100 +217,79 @@ const getMessages = async (conversationId, userId, userRole, page = 1, limit = 5
 
 // Send a message
 const sendMessage = async (conversationId, senderId, senderRole, content, attachmentUrl = null, attachmentType = null, attachmentName = null) => {
-  // Validate: must have content or attachment
+  const cId = parseInt(conversationId);
+  const sId = parseInt(senderId);
   const hasContent = content && content.trim();
-  const hasAttachment = attachmentUrl;
-  
-  if (!hasContent && !hasAttachment) {
+
+  if (!hasContent && !attachmentUrl) {
     throw new Error('Message content or attachment is required');
   }
 
-  const conversation = await Conversation.findByPk(conversationId);
-  if (!conversation) {
-    throw new Error('Conversation not found');
-  }
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: cId }
+  });
 
-  // Verify access
+  if (!conversation) throw new Error('Conversation not found');
+
   if (senderRole === 'student') {
-    const student = await Student.findOne({ where: { userId: senderId } });
+    const student = await prisma.student.findUnique({ where: { userId: sId } });
     if (!student || conversation.studentId !== student.id) {
       throw new Error('Unauthorized access to conversation');
     }
   }
 
-  const message = await Message.create({
-    conversationId,
-    senderId,
-    senderRole,
-    content: hasContent ? content.trim() : null,
-    attachmentUrl,
-    attachmentType,
-    attachmentName,
-    isRead: false
+  const message = await prisma.$transaction(async (tx) => {
+    const newMessage = await tx.message.create({
+      data: {
+        conversationId: cId,
+        senderId: sId,
+        senderRole,
+        content: hasContent ? content.trim() : null,
+        attachmentUrl,
+        attachmentType,
+        attachmentName,
+        isRead: false
+      },
+      include: {
+        sender: { select: { id: true, name: true, email: true, profileImage: true } }
+      }
+    });
+
+    await tx.conversation.update({
+      where: { id: cId },
+      data: { lastMessageAt: new Date() }
+    });
+
+    return newMessage;
   });
 
-  // Update conversation last message time
-  conversation.lastMessageAt = new Date();
-  await conversation.save();
-
-  // Load sender info
-  await message.reload({
-    include: [{
-      model: User,
-      as: 'sender',
-      attributes: ['id', 'name', 'email', 'profileImage']
-    }]
-  });
-
-  // Add student profile image if sender is a student
+  // Handle student profile image
   if (senderRole === 'student') {
-    const student = await Student.findOne({ where: { userId: senderId } });
+    const student = await prisma.student.findUnique({ where: { userId: sId } });
     if (student && student.profileImage) {
       message.sender.profileImage = student.profileImage;
     }
   }
 
-  // Send notification to the other party in the conversation
+  // Handle notifications
   try {
     if (senderRole === 'admin') {
-      // Admin sent message, notify student
-      const student = await Student.findByPk(conversation.studentId, {
-        include: [{ model: User, as: 'user', attributes: ['id'] }]
+      const student = await prisma.student.findUnique({
+        where: { id: conversation.studentId },
+        select: { userId: true }
       });
-      if (student && student.user) {
-        await notificationService.createNotification(
-          student.user.id,
-          'new_message',
-          'New Message',
-          `You have a new message from the administration`,
-          conversation.id,
-          'conversation'
-        );
+      if (student && student.userId) {
+        await notificationService.createNotification(student.userId, 'new_message', 'New Message', 'You have a new message from the administration', conversation.id, 'conversation');
       }
     } else if (senderRole === 'student') {
-      // Student sent message, notify admin
       if (conversation.adminId) {
-        await notificationService.createNotification(
-          conversation.adminId,
-          'new_message',
-          'New Message from Student',
-          `You have a new message from ${message.sender.name}`,
-          conversation.id,
-          'conversation'
-        );
+        await notificationService.createNotification(conversation.adminId, 'new_message', 'New Message from Student', `You have a new message from ${message.sender.name}`, conversation.id, 'conversation');
       } else {
-        // No admin assigned, notify all admins
-        await notificationService.createNotificationForAdmins(
-          'new_message',
-          'New Message from Student',
-          `You have a new message from a student`,
-          conversation.id,
-          'conversation'
-        );
+        await notificationService.createNotificationForAdmins('new_message', 'New Message from Student', 'You have a new message from a student', conversation.id, 'conversation');
       }
     }
-  } catch (error) {
-    console.error('Error creating message notification:', error);
+  } catch (err) {
+    console.error('Error sending message notification:', err);
   }
 
   return message;
@@ -359,48 +297,29 @@ const sendMessage = async (conversationId, senderId, senderRole, content, attach
 
 // Get unread message count
 const getUnreadCount = async (userId, userRole) => {
+  const uId = parseInt(userId);
   if (userRole === 'admin') {
-    // Count unread messages in all conversations where admin is not the sender
-    const conversations = await Conversation.findAll({
-      include: [{
-        model: Message,
-        as: 'messages',
-        where: {
-          isRead: false,
-          senderRole: 'student'
-        },
-        required: false
-      }]
+    return await prisma.message.count({
+      where: {
+        senderRole: 'student',
+        isRead: false
+      }
     });
-
-    let count = 0;
-    for (const conv of conversations) {
-      const unread = await Message.count({
-        where: {
-          conversationId: conv.id,
-          isRead: false,
-          senderRole: 'student'
-        }
-      });
-      count += unread;
-    }
-    return count;
   } else {
-    // Count unread messages for student
-    const student = await Student.findOne({ where: { userId } });
+    const student = await prisma.student.findUnique({ where: { userId: uId } });
     if (!student) return 0;
 
-    const conversation = await Conversation.findOne({
+    const conversation = await prisma.conversation.findUnique({
       where: { studentId: student.id }
     });
 
     if (!conversation) return 0;
 
-    return await Message.count({
+    return await prisma.message.count({
       where: {
         conversationId: conversation.id,
-        isRead: false,
-        senderRole: 'admin'
+        senderRole: 'admin',
+        isRead: false
       }
     });
   }
@@ -414,4 +333,3 @@ module.exports = {
   sendMessage,
   getUnreadCount
 };
-

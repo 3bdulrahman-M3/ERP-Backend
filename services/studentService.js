@@ -1,7 +1,6 @@
 const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
-const { Sequelize } = require('sequelize');
-const { Student, User, RoomStudent, College } = require('../models');
+const prisma = require('../config/prisma');
 const notificationService = require('./notificationService');
 
 // Generate QR Code
@@ -25,59 +24,75 @@ const createStudent = async (studentData) => {
   const { name, email, password, collegeId, year, age, phoneNumber, profileImage, governorate, address, guardianPhone, idCardImage } = studentData;
 
   // Check if email already exists
-  const existingStudent = await Student.findOne({ where: { email } });
+  const existingStudent = await prisma.student.findUnique({ where: { email } });
   if (existingStudent) {
     throw new Error('Student with this email already exists');
   }
 
-  const existingUser = await User.findOne({ where: { email } });
+  const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new Error('User with this email already exists');
   }
 
-  // Create user first (password will be hashed automatically by User model hook)
-  const user = await User.create({
-    name,
-    email,
-    password: password, // User model will hash it automatically
-    role: 'student',
-    isActive: true
+  // Hash password manually before creating user
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user and student in a transaction to ensure integrity
+  const result = await prisma.$transaction(async (tx) => {
+    // Create user
+    const user = await tx.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role: 'student',
+        isActive: true,
+        profileImage: profileImage || null,
+      }
+    });
+
+    // Create student
+    let student = await tx.student.create({
+      data: {
+        name,
+        email,
+        collegeId: collegeId ? parseInt(collegeId) : null,
+        year: year ? parseInt(year) : null,
+        age: parseInt(age),
+        phoneNumber,
+        profileImage: profileImage || null,
+        governorate: governorate || null,
+        address: address || null,
+        guardianPhone: guardianPhone || null,
+        idCardImage: idCardImage || null,
+        userId: user.id
+      }
+    });
+
+    // Generate QR code with student.id
+    const qrCode = await generateQRCode(student.id, name, email);
+    
+    // Update student with QR code
+    student = await tx.student.update({
+      where: { id: student.id },
+      data: { qrCode },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            profileImage: true
+          }
+        },
+        college: true
+      }
+    });
+
+    return student;
   });
-
-  // Create student first (we need student.id for QR code)
-  const student = await Student.create({
-    name,
-    email,
-    collegeId: collegeId || null,
-    year: year || null,
-    age,
-    phoneNumber,
-    profileImage: profileImage || null,
-    governorate: governorate || null,
-    address: address || null,
-    guardianPhone: guardianPhone || null,
-    idCardImage: idCardImage || null,
-    userId: user.id
-  });
-
-  // Generate QR code with student.id (unique for each student)
-  const qrCode = await generateQRCode(student.id, name, email);
-  student.qrCode = qrCode;
-  await student.save();
-
-  // Reload with user and college relations
-  await student.reload({ 
-    include: [
-      { model: User, as: 'user' },
-      { model: College, as: 'college' }
-    ] 
-  });
-
-  // Remove password from user in response
-  const studentResponse = student.toJSON();
-  if (studentResponse.user) {
-    delete studentResponse.user.password;
-  }
 
   // Create notification for admins
   try {
@@ -85,47 +100,63 @@ const createStudent = async (studentData) => {
       'student_created',
       'New Student',
       `A new student has been added: ${name}`,
-      student.id,
+      result.id,
       'student'
     );
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return studentResponse;
+  return result;
 };
 
 // Get all students
 const getAllStudents = async (page = 1, limit = 10, excludeAssigned = false) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
 
-  const whereClause = {};
+  const where = {};
   
   // If excludeAssigned is true, exclude students who have active room assignments
   if (excludeAssigned) {
-    whereClause.id = {
-      [Sequelize.Op.notIn]: Sequelize.literal(`(
-        SELECT DISTINCT "studentId" 
-        FROM "room_students" 
-        WHERE "isActive" = true
-      )`)
+    where.roomStudents = {
+      none: {
+        isActive: true
+      }
     };
   }
 
-  const { count, rows } = await Student.findAndCountAll({
-    where: whereClause,
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] }
-    ],
-    attributes: { exclude: ['password'] },
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['createdAt', 'DESC']]
-  });
+  const [students, count] = await Promise.all([
+    prisma.student.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true
+          }
+        },
+        college: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      skip,
+      take,
+      orderBy: {
+        createdAt: 'desc'
+      }
+    }),
+    prisma.student.count({ where })
+  ]);
 
   return {
-    students: rows,
+    students,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -137,43 +168,67 @@ const getAllStudents = async (page = 1, limit = 10, excludeAssigned = false) => 
 
 // Get student by ID
 const getStudentById = async (id) => {
-  const { Room, Building } = require('../models');
-  const student = await Student.findByPk(id, {
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive', 'profileImage'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] },
-      { 
-        model: RoomStudent, 
-        as: 'roomAssignments',
+  const studentId = parseInt(id);
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          isActive: true,
+          profileImage: true
+        }
+      },
+      college: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
+      roomStudents: {
         where: { isActive: true },
-        required: false,
-        include: [{ 
-          model: Room, 
-          as: 'room', 
-          attributes: ['id', 'roomNumber', 'building', 'buildingId'],
-          include: [{
-            model: Building,
-            as: 'buildingInfo',
-            attributes: ['id', 'name', 'address'],
-            required: false
-          }]
-        }]
+        include: {
+          room: {
+            select: {
+              id: true,
+              roomNumber: true,
+              building: true,
+              buildingId: true,
+              buildingInfo: {
+                select: {
+                  id: true,
+                  name: true,
+                  address: true
+                }
+              }
+            }
+          }
+        }
       }
-    ],
-    attributes: { exclude: ['password'] }
+    }
   });
 
   if (!student) {
     throw new Error('Student not found');
   }
 
+  // Flatten the response to match frontend expectations if needed
+  // Sequelize used "roomAssignments" as alias, Prisma uses "roomStudents" (model name)
+  // Let's add roomAssignments for compatibility
+  student.roomAssignments = student.roomStudents;
+
   return student;
 };
 
 // Update student
 const updateStudent = async (id, studentData) => {
-  const student = await Student.findByPk(id, {
-    include: [{ model: User, as: 'user' }]
+  const studentId = parseInt(id);
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    include: { user: true }
   });
 
   if (!student) {
@@ -184,72 +239,85 @@ const updateStudent = async (id, studentData) => {
 
   // Check if email is being changed and if it's already taken
   if (email && email !== student.email) {
-    const existingStudent = await Student.findOne({ where: { email } });
+    const existingStudent = await prisma.student.findUnique({ where: { email } });
     if (existingStudent) {
       throw new Error('Email already exists');
     }
 
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       throw new Error('Email already exists in users');
     }
   }
 
-  // Update student fields first
-  if (name) student.name = name;
-  if (email) student.email = email;
-  if (collegeId !== undefined) student.collegeId = collegeId;
-  if (year !== undefined) student.year = year;
-  if (age) student.age = age;
-  if (phoneNumber) student.phoneNumber = phoneNumber;
-  if (profileImage !== undefined) student.profileImage = profileImage;
-  if (governorate !== undefined) student.governorate = governorate;
-  if (address !== undefined) student.address = address;
-  if (guardianPhone !== undefined) student.guardianPhone = guardianPhone;
-  if (idCardImage !== undefined) student.idCardImage = idCardImage;
+  // Prepare data for update
+  const studentUpdateData = {};
+  if (name) studentUpdateData.name = name;
+  if (email) studentUpdateData.email = email;
+  if (collegeId !== undefined) studentUpdateData.collegeId = collegeId ? parseInt(collegeId) : null;
+  if (year !== undefined) studentUpdateData.year = year ? parseInt(year) : null;
+  if (age) studentUpdateData.age = parseInt(age);
+  if (phoneNumber) studentUpdateData.phoneNumber = phoneNumber;
+  if (profileImage !== undefined) studentUpdateData.profileImage = profileImage;
+  if (governorate !== undefined) studentUpdateData.governorate = governorate;
+  if (address !== undefined) studentUpdateData.address = address;
+  if (guardianPhone !== undefined) studentUpdateData.guardianPhone = guardianPhone;
+  if (idCardImage !== undefined) studentUpdateData.idCardImage = idCardImage;
 
-  // Regenerate QR code if student data changed (use updated values)
+  // Regenerate QR code if student data changed
   if (name || email) {
-    const qrCode = await generateQRCode(student.userId, student.name, student.email);
-    student.qrCode = qrCode;
+    const qrCode = await generateQRCode(student.id, name || student.name, email || student.email);
+    studentUpdateData.qrCode = qrCode;
   }
 
-  // Update user to sync all shared fields (name, email, profileImage, password)
-  // This ensures User table is always in sync with Student table
-  if (student.user) {
-    if (name) student.user.name = name;
-    if (email) student.user.email = email;
-    if (profileImage !== undefined) student.user.profileImage = profileImage;
-    if (password) {
-      // Password will be hashed by User model hook
-      student.user.password = password;
+  // Update in a transaction
+  const updatedStudent = await prisma.$transaction(async (tx) => {
+    // Update User if student has one and fields changed
+    if (student.userId) {
+      const userUpdateData = {};
+      if (name) userUpdateData.name = name;
+      if (email) userUpdateData.email = email;
+      if (profileImage !== undefined) userUpdateData.profileImage = profileImage;
+      if (password) {
+        userUpdateData.password = await bcrypt.hash(password, 10);
+      }
+
+      if (Object.keys(userUpdateData).length > 0) {
+        await tx.user.update({
+          where: { id: student.userId },
+          data: userUpdateData
+        });
+      }
     }
-    await student.user.save();
-  }
 
-  // Save student after user is updated
-  await student.save();
-
-  await student.reload({ 
-    include: [
-      { model: User, as: 'user' },
-      { model: College, as: 'college' }
-    ] 
+    // Update Student
+    return await tx.student.update({
+      where: { id: studentId },
+      data: studentUpdateData,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            profileImage: true
+          }
+        },
+        college: true
+      }
+    });
   });
 
-  const studentResponse = student.toJSON();
-  delete studentResponse.password;
-  if (studentResponse.user) {
-    delete studentResponse.user.password;
-  }
-
-  return studentResponse;
+  return updatedStudent;
 };
 
 // Delete student
 const deleteStudent = async (id) => {
-  const student = await Student.findByPk(id, {
-    include: [{ model: User, as: 'user' }]
+  const studentId = parseInt(id);
+  const student = await prisma.student.findUnique({
+    where: { id: studentId }
   });
 
   if (!student) {
@@ -258,17 +326,16 @@ const deleteStudent = async (id) => {
 
   const userId = student.userId;
 
-  // Delete student first
-  await student.destroy();
-
-  // Delete user if it exists
-  // We need to explicitly delete User because onDelete: 'CASCADE' only works when deleting User (which deletes Student)
-  // But when deleting Student, we need to manually delete the associated User
+  // We can delete the user if it exists, which will cascade to student
+  // Or delete student first. Given the schema, deleting user is often cleaner.
   if (userId) {
-    const user = await User.findByPk(userId);
-    if (user) {
-      await user.destroy();
-    }
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+  } else {
+    await prisma.student.delete({
+      where: { id: studentId }
+    });
   }
 
   return { message: 'Student deleted successfully' };
@@ -276,13 +343,25 @@ const deleteStudent = async (id) => {
 
 // Get student by email
 const getStudentByEmail = async (email) => {
-  const student = await Student.findOne({
+  const student = await prisma.student.findUnique({
     where: { email },
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] }
-    ],
-    attributes: { exclude: ['password'] }
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          isActive: true
+        }
+      },
+      college: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
   });
 
   return student;
@@ -290,31 +369,49 @@ const getStudentByEmail = async (email) => {
 
 // Get students by college and/or year
 const getStudentsByCollegeAndYear = async (collegeId, year, page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
-  const whereClause = {};
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
+  const where = {};
 
   if (collegeId) {
-    whereClause.collegeId = collegeId;
+    where.collegeId = parseInt(collegeId);
   }
 
   if (year) {
-    whereClause.year = year;
+    where.year = parseInt(year);
   }
 
-  const { count, rows } = await Student.findAndCountAll({
-    where: whereClause,
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email', 'role', 'isActive'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] }
-    ],
-    attributes: { exclude: ['password'] },
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['createdAt', 'DESC']]
-  });
+  const [students, count] = await Promise.all([
+    prisma.student.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true
+          }
+        },
+        college: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      skip,
+      take,
+      orderBy: {
+        createdAt: 'desc'
+      }
+    }),
+    prisma.student.count({ where })
+  ]);
 
   return {
-    students: rows,
+    students,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -324,12 +421,16 @@ const getStudentsByCollegeAndYear = async (collegeId, year, page = 1, limit = 10
   };
 };
 
-// Complete student profile (for users who registered but didn't complete profile)
+// Complete student profile
 const completeStudentProfile = async (userId, studentData) => {
+  const uId = parseInt(userId);
   const { collegeId, year, age, phoneNumber } = studentData;
 
   // Check if user exists
-  const user = await User.findByPk(userId);
+  const user = await prisma.user.findUnique({
+    where: { id: uId }
+  });
+  
   if (!user) {
     throw new Error('User not found');
   }
@@ -339,40 +440,52 @@ const completeStudentProfile = async (userId, studentData) => {
   }
 
   // Check if student already exists
-  const existingStudent = await Student.findOne({ where: { userId } });
+  const existingStudent = await prisma.student.findUnique({ 
+    where: { userId: uId } 
+  });
+  
   if (existingStudent) {
     throw new Error('Student profile already exists');
   }
 
-  // Create student first (we need student.id for QR code)
-  const student = await Student.create({
-    name: user.name,
-    email: user.email,
-    collegeId: collegeId || null,
-    year: year || null,
-    age: age || null,
-    phoneNumber: phoneNumber || null,
-    userId: user.id
+  const result = await prisma.$transaction(async (tx) => {
+    // Create student
+    let student = await tx.student.create({
+      data: {
+        name: user.name,
+        email: user.email,
+        collegeId: collegeId ? parseInt(collegeId) : null,
+        year: year ? parseInt(year) : null,
+        age: age ? parseInt(age) : null,
+        phoneNumber: phoneNumber || null,
+        userId: user.id
+      }
+    });
+
+    // Generate QR code
+    const qrCode = await generateQRCode(student.id, user.name, user.email);
+    
+    // Update with QR code
+    student = await tx.student.update({
+      where: { id: student.id },
+      data: { qrCode },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+            profileImage: true
+          }
+        },
+        college: true
+      }
+    });
+    
+    return student;
   });
-
-  // Generate QR code with student.id (unique for each student)
-  const qrCode = await generateQRCode(student.id, user.name, user.email);
-  student.qrCode = qrCode;
-  await student.save();
-
-  // Reload with relations
-  await student.reload({ 
-    include: [
-      { model: User, as: 'user' },
-      { model: College, as: 'college' }
-    ] 
-  });
-
-  // Remove password from user in response
-  const studentResponse = student.toJSON();
-  if (studentResponse.user) {
-    delete studentResponse.user.password;
-  }
 
   // Create notification for admins
   try {
@@ -380,14 +493,14 @@ const completeStudentProfile = async (userId, studentData) => {
       'student_created',
       'New Student',
       `New student added: ${user.name}`,
-      student.id,
+      result.id,
       'student'
     );
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return studentResponse;
+  return result;
 };
 
 module.exports = {
@@ -401,4 +514,3 @@ module.exports = {
   getStudentsByCollegeAndYear,
   completeStudentProfile
 };
-

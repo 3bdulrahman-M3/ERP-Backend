@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { User, RefreshToken } = require('../models');
+const bcrypt = require('bcryptjs');
+const prisma = require('../config/prisma');
 
 // Generate access token (expires in 1 day)
 const generateAccessToken = (userId, role) => {
@@ -21,32 +22,35 @@ const saveRefreshToken = async (userId, token) => {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
 
-  await RefreshToken.create({
-    token,
-    userId,
-    expiresAt
+  await prisma.refreshToken.create({
+    data: {
+      token,
+      userId,
+      expiresAt
+    }
   });
 };
 
 // Revoke refresh token
 const revokeRefreshToken = async (token) => {
-  const refreshToken = await RefreshToken.findOne({ where: { token } });
-  if (refreshToken) {
-    refreshToken.isRevoked = true;
-    await refreshToken.save();
-  }
+  await prisma.refreshToken.updateMany({
+    where: { token },
+    data: { isRevoked: true }
+  });
 };
 
 // Revoke all refresh tokens for a user
 const revokeAllUserTokens = async (userId) => {
-  await RefreshToken.update(
-    { isRevoked: true },
-    { where: { userId, isRevoked: false } }
-  );
+  await prisma.refreshToken.updateMany({
+    where: { userId, isRevoked: false },
+    data: { isRevoked: true }
+  });
 };
 
 const login = async (email, password) => {
-  const user = await User.findOne({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email }
+  });
 
   if (!user) {
     throw new Error('Invalid email or password');
@@ -56,7 +60,8 @@ const login = async (email, password) => {
     throw new Error('Account is not active');
   }
 
-  const isPasswordValid = await user.comparePassword(password);
+  // Use a manual check for password since Sequelize hooks are gone
+  const isPasswordValid = await bcrypt.compare(password, user.password);
 
   if (!isPasswordValid) {
     throw new Error('Invalid email or password');
@@ -69,18 +74,21 @@ const login = async (email, password) => {
   // Save refresh token
   await saveRefreshToken(user.id, refreshToken);
 
+  // Return user without password
+  const { password: _, ...userWithoutPassword } = user;
+
   return {
     accessToken,
     refreshToken,
-    user: user.toJSON()
+    user: userWithoutPassword
   };
 };
 
 const refreshAccessToken = async (refreshToken) => {
   // Find the refresh token in database
-  const tokenRecord = await RefreshToken.findOne({
+  const tokenRecord = await prisma.refreshToken.findUnique({
     where: { token: refreshToken },
-    include: [{ model: User, as: 'user' }]
+    include: { user: true }
   });
 
   if (!tokenRecord) {
@@ -104,9 +112,11 @@ const refreshAccessToken = async (refreshToken) => {
   // Generate new access token
   const newAccessToken = generateAccessToken(user.id, user.role);
 
+  const { password: _, ...userWithoutPassword } = user;
+
   return {
     accessToken: newAccessToken,
-    user: user.toJSON()
+    user: userWithoutPassword
   };
 };
 
@@ -116,113 +126,107 @@ const logout = async (refreshToken) => {
 
 // Update user profile
 const updateProfile = async (userId, updateData) => {
-  const { Student } = require('../models');
   const { name, email, password, profileImage } = updateData;
 
-  const user = await User.findByPk(userId);
-  if (!user) {
-    throw new Error('User not found');
-  }
+  const dataToUpdate = {};
+  if (name) dataToUpdate.name = name;
+  if (profileImage !== undefined) dataToUpdate.profileImage = profileImage;
 
-  // Check if email is being changed and if it's already taken
-  if (email && email !== user.email) {
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
+  if (email) {
+    // Check if email already exists
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser && existingUser.id !== userId) {
       throw new Error('Email already exists');
     }
     
     // Also check if email exists in students table
-    const existingStudent = await Student.findOne({ where: { email } });
-    if (existingStudent) {
+    const existingStudent = await prisma.student.findUnique({ where: { email } });
+    if (existingStudent && existingStudent.userId !== userId) {
       throw new Error('Email already exists');
     }
     
-    user.email = email;
+    dataToUpdate.email = email;
   }
 
-  // Update name if provided
-  if (name) {
-    user.name = name;
-  }
-
-  // Update password if provided (will be hashed by User model hook)
   if (password) {
-    user.password = password;
+    dataToUpdate.password = await bcrypt.hash(password, 10);
   }
 
-  // Update profile image if provided
-  if (profileImage !== undefined) {
-    user.profileImage = profileImage;
-  }
-
-  await user.save();
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: dataToUpdate
+  });
 
   // If user is a student, sync changes to Student table
   if (user.role === 'student') {
-    const student = await Student.findOne({ where: { userId: user.id } });
+    const student = await prisma.student.findUnique({ where: { userId: user.id } });
     if (student) {
-      let studentUpdated = false;
-      if (name && student.name !== name) {
-        student.name = name;
-        studentUpdated = true;
-      }
-      if (email && student.email !== email) {
-        student.email = email;
-        studentUpdated = true;
-      }
-      if (profileImage !== undefined && student.profileImage !== profileImage) {
-        student.profileImage = profileImage;
-        studentUpdated = true;
-      }
+      const studentUpdate = {};
+      if (name) studentUpdate.name = name;
+      if (email) studentUpdate.email = email;
+      if (profileImage !== undefined) studentUpdate.profileImage = profileImage;
       
       // Regenerate QR code if name or email changed
       if (name || email) {
         const QRCode = require('qrcode');
         const qrData = JSON.stringify({
           id: student.id,
-          name: student.name,
-          email: student.email,
+          name: studentUpdate.name || student.name,
+          email: studentUpdate.email || student.email,
           type: 'student'
         });
-        student.qrCode = await QRCode.toDataURL(qrData);
-        studentUpdated = true;
+        studentUpdate.qrCode = await QRCode.toDataURL(qrData);
       }
       
-      if (studentUpdated) {
-        await student.save();
+      if (Object.keys(studentUpdate).length > 0) {
+        await prisma.student.update({
+          where: { id: student.id },
+          data: studentUpdate
+        });
       }
     }
   }
 
-  return user.toJSON();
+  const { password: _, ...userWithoutPassword } = user;
+  return userWithoutPassword;
 };
 
 // Get user profile
 const getProfile = async (userId) => {
-  const user = await User.findByPk(userId);
+  const user = await prisma.user.findUnique({
+    where: { id: userId }
+  });
+  
   if (!user) {
     throw new Error('User not found');
   }
-  return user.toJSON();
+  
+  const { password: _, ...userWithoutPassword } = user;
+  return userWithoutPassword;
 };
 
-// Register new student - Create User only, Student will be created later
+// Register new student
 const register = async (registerData) => {
   const { name, email, password } = registerData;
 
   // Check if email already exists
-  const existingUser = await User.findOne({ where: { email } });
+  const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new Error('Email is already in use');
   }
 
-  // Create user only (password will be hashed automatically by User model hook)
-  const user = await User.create({
-    name,
-    email,
-    password: password, // User model will hash it automatically
-    role: 'student',
-    isActive: true
+  // Hash password manually (was done by Sequelize hook before)
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      role: 'student',
+      isActive: true
+    }
   });
 
   // Generate tokens for immediate login
@@ -232,10 +236,12 @@ const register = async (registerData) => {
   // Save refresh token
   await saveRefreshToken(user.id, refreshToken);
 
+  const { password: _, ...userWithoutPassword } = user;
+
   return {
     accessToken,
     refreshToken,
-    user: user.toJSON()
+    user: userWithoutPassword
   };
 };
 

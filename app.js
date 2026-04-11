@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { sequelize } = require('./config/database');
+const prisma = require('./config/prisma');
 const authRoutes = require('./routes/authRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const roomRoutes = require('./routes/roomRoutes');
@@ -97,31 +97,19 @@ app.get('/', (req, res) => {
 // Health check endpoint with detailed database info
 app.get('/api/health', async (req, res) => {
   try {
-    // Test database connection
-    await sequelize.authenticate();
+    // Test database connection using Prisma
+    await prisma.$queryRaw`SELECT 1`;
     
     // Get database info
-    const [results] = await sequelize.query("SELECT version(), current_database(), current_user");
-    const dbInfo = results[0];
-    
-    // Get connection config (without password)
-    const config = sequelize.config;
-    const connectionInfo = {
-      database: config.database || 'N/A',
-      host: config.host || 'N/A',
-      port: config.port || 'N/A',
-      username: config.username || 'N/A',
-      dialect: config.dialect || 'N/A',
-      usingDATABASE_URL: !!process.env.DATABASE_URL
-    };
+    const dbInfoRaw = await prisma.$queryRaw`SELECT version(), current_database(), current_user`;
+    const dbInfo = dbInfoRaw[0];
     
     res.json({
       success: true,
-      message: 'Database connected successfully',
+      message: 'Database connected successfully via Prisma',
       data: {
         status: 'connected',
         timestamp: new Date().toISOString(),
-        connection: connectionInfo,
         database: {
           name: dbInfo.current_database,
           user: dbInfo.current_user,
@@ -137,13 +125,7 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Database connection error',
-      error: error.message,
-      details: {
-        timestamp: new Date().toISOString(),
-        hasDATABASE_URL: !!process.env.DATABASE_URL,
-        hasIndividualVars: !!(process.env.DB_HOST && process.env.DB_NAME),
-        environment: process.env.NODE_ENV || 'development'
-      }
+      error: error.message
     });
   }
 });
@@ -193,16 +175,16 @@ const startServer = async () => {
     console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
     console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? '✅ Set (hidden)' : '❌ NOT SET'}`);
     
-    // Test database connection with timeout
-    console.log('🔄 Attempting to connect to database...');
+    // Test database connection with timeout using Prisma
+    console.log('🔄 Attempting to connect to database via Prisma...');
     try {
       await Promise.race([
-        sequelize.authenticate(),
+        prisma.$connect(),
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
         )
       ]);
-      console.log('✅ Successfully connected to ERP database');
+      console.log('✅ Successfully connected to ERP database via Prisma');
     } catch (dbError) {
       console.error('❌ Database connection failed!');
       console.error(`   Error: ${dbError.message}`);

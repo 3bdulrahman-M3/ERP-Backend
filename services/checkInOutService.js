@@ -1,5 +1,4 @@
-const { CheckInOut, Student, User, College } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../config/prisma');
 const notificationService = require('./notificationService');
 
 // Parse QR code data and get student ID
@@ -7,14 +6,17 @@ const parseQRCode = async (qrData) => {
   try {
     const data = JSON.parse(qrData);
     if (data.id && data.type === 'student') {
-      // QR code now contains student.id directly
-      const student = await Student.findByPk(data.id);
+      // Try to find if it is a direct student ID
+      const student = await prisma.student.findUnique({
+        where: { id: parseInt(data.id) }
+      });
       if (student) {
         return student.id;
       }
-      // Fallback: try to find by userId (for backward compatibility with old QR codes)
-      const studentByUserId = await Student.findOne({
-        where: { userId: data.id }
+      
+      // Fallback: try to find by userId
+      const studentByUserId = await prisma.student.findUnique({
+        where: { userId: parseInt(data.id) }
       });
       if (studentByUserId) {
         return studentByUserId.id;
@@ -29,11 +31,13 @@ const parseQRCode = async (qrData) => {
 
 // Check in student
 const checkInStudent = async (studentId, notes = null) => {
-  const student = await Student.findByPk(studentId, {
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] }
-    ]
+  const sId = parseInt(studentId);
+  const student = await prisma.student.findUnique({
+    where: { id: sId },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      college: { select: { id: true, name: true } }
+    }
   });
 
   if (!student) {
@@ -43,9 +47,9 @@ const checkInStudent = async (studentId, notes = null) => {
   const today = new Date().toISOString().split('T')[0];
   
   // Check if student already checked in today
-  const existingCheckIn = await CheckInOut.findOne({
+  const existingCheckIn = await prisma.checkInOut.findFirst({
     where: {
-      studentId,
+      studentId: sId,
       date: today,
       status: 'checked_in'
     }
@@ -56,32 +60,29 @@ const checkInStudent = async (studentId, notes = null) => {
   }
 
   // Create check-in record
-  const checkIn = await CheckInOut.create({
-    studentId,
-    checkInTime: new Date(),
-    date: today,
-    status: 'checked_in',
-    notes: notes || null
-  });
-
-  await checkIn.reload({
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'] }
-        ]
+  const checkIn = await prisma.checkInOut.create({
+    data: {
+      studentId: sId,
+      checkInTime: new Date(),
+      date: today,
+      status: 'checked_in',
+      notes: notes || null
+    },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          college: { select: { id: true, name: true } }
+        }
       }
-    ]
+    }
   });
 
   // Send notification to student
   try {
-    if (student.user) {
+    if (student.userId) {
       await notificationService.createNotification(
-        student.user.id,
+        student.userId,
         'check_in',
         'Checked In',
         `You have successfully checked in at ${new Date().toLocaleString('en-US')}`,
@@ -106,15 +107,15 @@ const checkInStudent = async (studentId, notes = null) => {
     console.error('Error creating check-in notification for admins:', error);
   }
 
-  return checkIn.toJSON();
+  return checkIn;
 };
 
 // Check out student
 const checkOutStudent = async (studentId, notes = null) => {
-  const student = await Student.findByPk(studentId, {
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email'] }
-    ]
+  const sId = parseInt(studentId);
+  const student = await prisma.student.findUnique({
+    where: { id: sId },
+    include: { user: { select: { id: true, name: true, email: true } } }
   });
 
   if (!student) {
@@ -124,9 +125,9 @@ const checkOutStudent = async (studentId, notes = null) => {
   const today = new Date().toISOString().split('T')[0];
   
   // Find today's check-in
-  const checkIn = await CheckInOut.findOne({
+  const checkIn = await prisma.checkInOut.findFirst({
     where: {
-      studentId,
+      studentId: sId,
       date: today,
       status: 'checked_in'
     }
@@ -137,35 +138,32 @@ const checkOutStudent = async (studentId, notes = null) => {
   }
 
   // Update check-out
-  checkIn.checkOutTime = new Date();
-  checkIn.status = 'checked_out';
-  if (notes) {
-    checkIn.notes = notes;
-  }
-  await checkIn.save();
-
-  await checkIn.reload({
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'] }
-        ]
+  const updatedCheckIn = await prisma.checkInOut.update({
+    where: { id: checkIn.id },
+    data: {
+      checkOutTime: new Date(),
+      status: 'checked_out',
+      notes: notes || undefined
+    },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          college: { select: { id: true, name: true } }
+        }
       }
-    ]
+    }
   });
 
   // Send notification to student
   try {
-    if (student.user) {
+    if (student.userId) {
       await notificationService.createNotification(
-        student.user.id,
+        student.userId,
         'check_out',
         'Checked Out',
         `You have successfully checked out at ${new Date().toLocaleString('en-US')}`,
-        checkIn.id,
+        updatedCheckIn.id,
         'check_in_out'
       );
     }
@@ -178,15 +176,15 @@ const checkOutStudent = async (studentId, notes = null) => {
     await notificationService.createNotificationForAdmins(
       'student_check_out',
       'Student Check-out',
-      `Student ${student.user?.name || student.name} has checked out`,
-      studentId,
+      `Student ${student.name} has checked out`,
+      sId,
       'student'
     );
   } catch (error) {
     console.error('Error creating notification:', error);
   }
 
-  return checkIn.toJSON();
+  return updatedCheckIn;
 };
 
 // Check in/out by QR code
@@ -200,7 +198,7 @@ const checkInOutByQRCode = async (qrData, notes = null) => {
   const today = new Date().toISOString().split('T')[0];
   
   // Check if student has checked in today
-  const existingCheckIn = await CheckInOut.findOne({
+  const existingCheckIn = await prisma.checkInOut.findFirst({
     where: {
       studentId,
       date: today,
@@ -219,46 +217,49 @@ const checkInOutByQRCode = async (qrData, notes = null) => {
 
 // Get all check-in/out records
 const getAllCheckInOuts = async (page = 1, limit = 10, filters = {}) => {
-  const offset = (page - 1) * limit;
-  const whereClause = {};
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
+  const where = {};
 
   if (filters.date) {
-    whereClause.date = filters.date;
+    where.date = filters.date;
   }
 
   if (filters.status) {
-    whereClause.status = filters.status;
+    where.status = filters.status;
   }
 
   if (filters.studentId) {
-    whereClause.studentId = filters.studentId;
+    where.studentId = parseInt(filters.studentId);
   }
 
   if (filters.startDate && filters.endDate) {
-    whereClause.date = {
-      [Op.between]: [filters.startDate, filters.endDate]
+    where.date = {
+      gte: filters.startDate,
+      lte: filters.endDate
     };
   }
 
-  const { count, rows } = await CheckInOut.findAndCountAll({
-    where: whereClause,
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'] }
-        ]
-      }
-    ],
-    order: [['createdAt', 'DESC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [records, count] = await Promise.all([
+    prisma.checkInOut.findMany({
+      where,
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            college: { select: { id: true, name: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take
+    }),
+    prisma.checkInOut.count({ where })
+  ]);
 
   return {
-    records: rows.map(record => record.toJSON()),
+    records,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -272,49 +273,46 @@ const getAllCheckInOuts = async (page = 1, limit = 10, filters = {}) => {
 const getTodayCheckIns = async () => {
   const today = new Date().toISOString().split('T')[0];
   
-  const checkIns = await CheckInOut.findAll({
-    where: {
-      date: today
-    },
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'] }
-        ]
+  return await prisma.checkInOut.findMany({
+    where: { date: today },
+    include: {
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          college: { select: { id: true, name: true } }
+        }
       }
-    ],
-    order: [['checkInTime', 'DESC']]
+    },
+    orderBy: { checkInTime: 'desc' }
   });
-
-  return checkIns.map(record => record.toJSON());
 };
 
 // Get student check-in/out history
 const getStudentHistory = async (studentId, page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
+  const sId = parseInt(studentId);
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
 
-  const { count, rows } = await CheckInOut.findAndCountAll({
-    where: { studentId },
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'] }
-        ]
-      }
-    ],
-    order: [['date', 'DESC'], ['checkInTime', 'DESC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [records, count] = await Promise.all([
+    prisma.checkInOut.findMany({
+      where: { studentId: sId },
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            college: { select: { id: true, name: true } }
+          }
+        }
+      },
+      orderBy: [{ date: 'desc' }, { checkInTime: 'desc' }],
+      skip,
+      take
+    }),
+    prisma.checkInOut.count({ where: { studentId: sId } })
+  ]);
 
   return {
-    records: rows.map(record => record.toJSON()),
+    records,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -326,15 +324,16 @@ const getStudentHistory = async (studentId, page = 1, limit = 10) => {
 
 // Get current student check-in status
 const getCurrentStudentStatus = async (studentId) => {
+  const sId = parseInt(studentId);
   const today = new Date().toISOString().split('T')[0];
   
-  const checkIn = await CheckInOut.findOne({
+  const checkIn = await prisma.checkInOut.findFirst({
     where: {
-      studentId,
+      studentId: sId,
       date: today,
       status: 'checked_in'
     },
-    order: [['checkInTime', 'DESC']]
+    orderBy: { checkInTime: 'desc' }
   });
 
   return {
@@ -345,23 +344,22 @@ const getCurrentStudentStatus = async (studentId) => {
   };
 };
 
-// Search students by name (for autocomplete)
+// Search students by name
 const searchStudents = async (searchTerm, limit = 5) => {
-  const students = await Student.findAll({
+  return await prisma.student.findMany({
     where: {
       name: {
-        [Op.iLike]: `%${searchTerm}%`
+        contains: searchTerm,
+        mode: 'insensitive'
       }
     },
-    include: [
-      { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-      { model: College, as: 'college', attributes: ['id', 'name'] }
-    ],
-    limit: parseInt(limit),
-    order: [['name', 'ASC']]
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      college: { select: { id: true, name: true } }
+    },
+    take: parseInt(limit),
+    orderBy: { name: 'asc' }
   });
-
-  return students.map(student => student.toJSON());
 };
 
 module.exports = {
@@ -375,4 +373,3 @@ module.exports = {
   searchStudents,
   parseQRCode
 };
-

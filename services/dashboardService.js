@@ -1,26 +1,22 @@
-const { Student, RoomStudent, Room, Sequelize } = require('../models');
+const prisma = require('../config/prisma');
 const mealService = require('./mealService');
 const checkInOutService = require('./checkInOutService');
-const { Op } = require('sequelize');
 
 // Get student dashboard data
 const getStudentDashboard = async (studentId) => {
+  const sId = parseInt(studentId);
+  
   // Get student info
-  const student = await Student.findByPk(studentId, {
-    include: [
-      {
-        model: require('./../models').User,
-        as: 'user',
-        attributes: ['id', 'name', 'email', 'role', 'isActive']
+  const student = await prisma.student.findUnique({
+    where: { id: sId },
+    include: {
+      user: {
+        select: { id: true, name: true, email: true, role: true, isActive: true }
       },
-      {
-        model: require('./../models').College,
-        as: 'college',
-        attributes: ['id', 'name'],
-        required: false
+      college: {
+        select: { id: true, name: true }
       }
-    ],
-    attributes: { exclude: ['password'] }
+    }
   });
 
   if (!student) {
@@ -28,35 +24,33 @@ const getStudentDashboard = async (studentId) => {
   }
 
   // Get student's current room
-  const roomAssignment = await RoomStudent.findOne({
+  const roomAssignment = await prisma.roomStudent.findFirst({
     where: {
-      studentId,
+      studentId: sId,
       isActive: true
     },
-    include: [
-      {
-        model: Room,
-        as: 'room',
-        attributes: ['id', 'roomNumber', 'floor', 'building', 'totalBeds', 'availableBeds', 'status']
+    include: {
+      room: {
+        select: { id: true, roomNumber: true, floor: true, totalBeds: true, availableBeds: true, status: true }
       }
-    ]
+    }
   });
 
   // Get kitchen status
   const kitchenStatus = await mealService.getKitchenStatus();
   
   // Get all active meals for display
-  const allMeals = await mealService.getAllMeals();
-  const activeMeals = allMeals.filter(meal => meal.isActive).map(meal => meal.toJSON());
+  const mealsData = await mealService.getAllMeals(1, 100);
+  const activeMeals = mealsData.meals.filter(meal => meal.isActive);
 
   // Get current check-in/out status
-  const checkInOutStatus = await checkInOutService.getCurrentStudentStatus(studentId);
+  const checkInOutStatus = await checkInOutService.getCurrentStudentStatus(sId);
 
   // Get current date and time
   const now = new Date();
   const currentDateTime = {
-    date: now.toISOString().split('T')[0], // YYYY-MM-DD
-    time: now.toTimeString().split(' ')[0], // HH:MM:SS
+    date: now.toISOString().split('T')[0],
+    time: now.toTimeString().split(' ')[0],
     timestamp: now.toISOString(),
     dayOfWeek: now.toLocaleDateString('en-US', { weekday: 'long' }),
     formatted: now.toLocaleString('en-US', {
@@ -71,7 +65,7 @@ const getStudentDashboard = async (studentId) => {
   };
 
   return {
-    student: student.toJSON(),
+    student,
     room: roomAssignment ? {
       assignment: {
         id: roomAssignment.id,
@@ -79,7 +73,7 @@ const getStudentDashboard = async (studentId) => {
         checkOutDate: roomAssignment.checkOutDate,
         isActive: roomAssignment.isActive
       },
-      room: roomAssignment.room.toJSON()
+      room: roomAssignment.room
     } : null,
     kitchenStatus: {
       ...kitchenStatus,
@@ -94,31 +88,33 @@ const getStudentDashboard = async (studentId) => {
 // Get admin dashboard statistics
 const getAdminStatistics = async () => {
   try {
-    // Count total students
-    const totalStudents = await Student.count();
+    const [totalStudents, totalRooms, availableRooms, occupiedRooms] = await Promise.all([
+      // Count total students
+      prisma.student.count(),
 
-    // Count total rooms
-    const totalRooms = await Room.count();
+      // Count total rooms
+      prisma.room.count(),
 
-    // Count available rooms (rooms with availableBeds > 0 and status is available or reserved)
-    const availableRooms = await Room.count({
-      where: {
-        [Op.and]: [
-          { availableBeds: { [Op.gt]: 0 } },
-          { status: { [Op.in]: ['available', 'reserved'] } }
-        ]
-      }
-    });
+      // Count available rooms
+      prisma.room.count({
+        where: {
+          AND: [
+            { availableBeds: { gt: 0 } },
+            { status: { in: ['available', 'reserved'] } }
+          ]
+        }
+      }),
 
-    // Count occupied rooms (rooms with availableBeds = 0 or status = 'occupied')
-    const occupiedRooms = await Room.count({
-      where: {
-        [Op.or]: [
-          { availableBeds: { [Op.eq]: 0 } },
-          { status: 'occupied' }
-        ]
-      }
-    });
+      // Count occupied rooms
+      prisma.room.count({
+        where: {
+          OR: [
+            { availableBeds: { equals: 0 } },
+            { status: 'occupied' }
+          ]
+        }
+      })
+    ]);
 
     return {
       totalStudents,
@@ -135,4 +131,3 @@ module.exports = {
   getStudentDashboard,
   getAdminStatistics
 };
-

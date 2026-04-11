@@ -1,118 +1,108 @@
-const { Preference, User, Student } = require('../models');
+const prisma = require('../config/prisma');
 
 // Get or create preferences for a user
 const getOrCreatePreferences = async (userId) => {
-  let preference = await Preference.findOne({ where: { userId } });
+  const uId = parseInt(userId);
+  let preference = await prisma.preference.findUnique({ where: { userId: uId } });
   
   if (!preference) {
-    preference = await Preference.create({
-      userId,
-      roomType: null,
-      preferredServices: []
+    preference = await prisma.preference.create({
+      data: {
+        userId: uId,
+        roomType: null,
+        preferredServices: []
+      }
     });
   }
   
-  return preference.toJSON();
+  return preference;
 };
 
 // Update preferences
 const updatePreferences = async (userId, preferenceData) => {
+  const uId = parseInt(userId);
   const { roomType, preferredServices } = preferenceData;
   
-  let preference = await Preference.findOne({ where: { userId } });
-  
-  if (!preference) {
-    preference = await Preference.create({
-      userId,
+  const pServices = Array.isArray(preferredServices) ? preferredServices.map(id => parseInt(id)) : [];
+
+  return await prisma.preference.upsert({
+    where: { userId: uId },
+    update: {
+      roomType: roomType !== undefined ? roomType : undefined,
+      preferredServices: preferredServices !== undefined ? pServices : undefined
+    },
+    create: {
+      userId: uId,
       roomType: roomType || null,
-      preferredServices: preferredServices || []
-    });
-  } else {
-    if (roomType !== undefined) {
-      preference.roomType = roomType;
+      preferredServices: pServices
     }
-    if (preferredServices !== undefined) {
-      preference.preferredServices = preferredServices;
-    }
-    await preference.save();
-  }
-  
-  return preference.toJSON();
+  });
 };
 
 // Get preferences by userId
 const getPreferences = async (userId) => {
-  const preference = await Preference.findOne({ where: { userId } });
+  const uId = parseInt(userId);
+  const preference = await prisma.preference.findUnique({ where: { userId: uId } });
   
   if (!preference) {
     return {
-      userId,
+      userId: uId,
       roomType: null,
       preferredServices: []
     };
   }
   
-  return preference.toJSON();
+  return preference;
 };
 
 // Get all students with matching preferences for a room
 const getStudentsWithMatchingPreferences = async (roomType, serviceIds = []) => {
-  const { User, Preference } = require('../models');
+  const sIds = Array.isArray(serviceIds) ? serviceIds.map(id => parseInt(id)) : [];
   
-  // Get all users with preferences
-  const users = await User.findAll({
-    where: { role: 'student', isActive: true },
-    include: [{
-      model: Preference,
-      as: 'preference',
-      required: false
-    }]
+  // Base query: active students with preferences
+  const where = {
+    role: 'student',
+    isActive: true,
+    preference: { isNot: null }
+  };
+
+  // Build preference filtering logic 
+  // Note: Sequelize code had complex OR/AND logic.
+  // We'll mimic the "at least one matching service" and "room type match" logic.
+  
+  const studentUsers = await prisma.user.findMany({
+    where,
+    include: { preference: true }
   });
 
-  // Filter users whose preferences match
-  const matchingUserIds = [];
-  
-  for (const user of users) {
-    if (!user.preference) {
-      continue; // Skip users without preferences
-    }
-    
+  const matchingUserIds = studentUsers.filter(user => {
     const pref = user.preference;
+    if (!pref) return false;
+
     let matches = true;
-    
-    // Check room type match (if roomType is specified and preference has roomType)
+
+    // Room type match
     if (roomType && pref.roomType && pref.roomType !== roomType) {
       matches = false;
     }
-    
-    // Check services match - if room has at least one service from student's preferences, it's a match
-    if (matches && serviceIds && serviceIds.length > 0 && pref.preferredServices && pref.preferredServices.length > 0) {
-      const hasMatchingService = serviceIds.some(serviceId => 
-        pref.preferredServices.includes(serviceId)
-      );
-      if (!hasMatchingService) {
-        matches = false;
-      }
-    } else if (matches && serviceIds && serviceIds.length > 0 && (!pref.preferredServices || pref.preferredServices.length === 0)) {
-      // If student has no preferred services but room has services, don't match
+
+    // Services match - at least one common service
+    if (matches && sIds.length > 0 && pref.preferredServices.length > 0) {
+      const hasMatchingService = sIds.some(sId => pref.preferredServices.includes(sId));
+      if (!hasMatchingService) matches = false;
+    } else if (matches && sIds.length > 0 && pref.preferredServices.length === 0) {
       matches = false;
-    } else if (matches && (!serviceIds || serviceIds.length === 0) && pref.preferredServices && pref.preferredServices.length > 0) {
-      // If student has preferred services but room has no services, don't match
+    } else if (matches && sIds.length === 0 && pref.preferredServices.length > 0) {
       matches = false;
     }
-    
-    // If roomType is not specified, still match if student has any preferences
-    if (matches && !roomType && (!pref.roomType || pref.preferredServices.length === 0)) {
-      // Only match if student has some preferences set
-      if (!pref.roomType && (!pref.preferredServices || pref.preferredServices.length === 0)) {
-        matches = false;
-      }
+
+    // If no roomType provided, ensure they have at least some preference set
+    if (matches && !roomType && !pref.roomType && pref.preferredServices.length === 0) {
+      matches = false;
     }
-    
-    if (matches) {
-      matchingUserIds.push(user.id);
-    }
-  }
+
+    return matches;
+  }).map(u => u.id);
 
   return matchingUserIds;
 };
@@ -123,4 +113,3 @@ module.exports = {
   getPreferences,
   getStudentsWithMatchingPreferences
 };
-

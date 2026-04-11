@@ -1,5 +1,7 @@
-const { Room, Student, RoomStudent, College, User, Service, Building, RoomRequest, Payment } = require('../models');
+const prisma = require('../config/prisma');
 const { calculatePaymentStatus } = require('./paymentService');
+const notificationService = require('./notificationService');
+const preferenceService = require('./preferenceService');
 
 const getDefaultAmountDue = (room) => {
   if (!room) {
@@ -29,39 +31,58 @@ const createPaymentForAssignment = async (assignment, room, paymentDetails = {})
   const remainingAmount = Math.max(amountDue - amountPaid, 0);
   const status = paymentDetails.status || calculatePaymentStatus(amountDue, amountPaid);
 
-  return Payment.create({
-    roomId: assignment.roomId,
-    studentId: assignment.studentId,
-    roomStudentId: assignment.id,
-    amountDue,
-    amountPaid,
-    remainingAmount,
-    status,
-    paymentMethod: paymentDetails.paymentMethod || 'cash',
-    paymentDate: paymentDetails.paymentDate || new Date(),
-    notes: paymentDetails.notes || null
+  return await prisma.payment.create({
+    data: {
+      roomId: assignment.roomId,
+      studentId: assignment.studentId,
+      roomStudentId: assignment.id,
+      amountDue,
+      amountPaid,
+      remainingAmount,
+      status,
+      paymentMethod: paymentDetails.paymentMethod || 'cash',
+      paymentDate: paymentDetails.paymentDate ? new Date(paymentDetails.paymentDate) : new Date(),
+      notes: paymentDetails.notes || null
+    }
   });
 };
 
 const checkOutAssignment = async (assignment, checkOutDate = new Date()) => {
-  assignment.isActive = false;
-  assignment.checkOutDate = checkOutDate;
-  await assignment.save();
+  return await prisma.$transaction(async (tx) => {
+    // Update assignment
+    await tx.roomStudent.update({
+      where: { id: assignment.id },
+      data: {
+        isActive: false,
+        checkOutDate: checkOutDate
+      }
+    });
 
-  const oldRoom = await Room.findByPk(assignment.roomId);
-  if (oldRoom) {
-    oldRoom.availableBeds = (oldRoom.availableBeds || 0) + 1;
-    if (oldRoom.availableBeds === oldRoom.totalBeds) {
-      oldRoom.status = 'available';
-    } else if (oldRoom.availableBeds > 0) {
-      oldRoom.status = 'occupied';
+    // Update room
+    const room = await tx.room.findUnique({
+      where: { id: assignment.roomId }
+    });
+
+    if (room) {
+      const newAvailableBeds = (room.availableBeds || 0) + 1;
+      let newStatus = room.status;
+      
+      if (newAvailableBeds === room.totalBeds) {
+        newStatus = 'available';
+      } else if (newAvailableBeds > 0) {
+        newStatus = 'occupied';
+      }
+
+      await tx.room.update({
+        where: { id: room.id },
+        data: {
+          availableBeds: newAvailableBeds,
+          status: newStatus
+        }
+      });
     }
-    await oldRoom.save();
-  }
+  });
 };
-const { Op } = require('sequelize');
-const notificationService = require('./notificationService');
-const preferenceService = require('./preferenceService');
 
 // Create room
 const createRoom = async (roomData) => {
@@ -69,26 +90,22 @@ const createRoom = async (roomData) => {
 
   // Auto-generate room number if not provided
   if (!roomNumber) {
-    // Get all rooms and find the highest numeric room number
-    const allRooms = await Room.findAll({
-      attributes: ['roomNumber']
+    const allRooms = await prisma.room.findMany({
+      select: { roomNumber: true }
     });
 
     let maxNumber = 0;
     for (const room of allRooms) {
-      // Try to parse room number as integer
       const num = parseInt(room.roomNumber, 10);
       if (!isNaN(num) && num > maxNumber) {
         maxNumber = num;
       }
     }
-    
-    // Generate next room number (starts from 1 if no numeric rooms exist)
     roomNumber = String(maxNumber + 1);
   }
 
   // Check if room number already exists
-  const existingRoom = await Room.findOne({ where: { roomNumber } });
+  const existingRoom = await prisma.room.findUnique({ where: { roomNumber } });
   if (existingRoom) {
     throw new Error('Room number already exists');
   }
@@ -100,53 +117,53 @@ const createRoom = async (roomData) => {
   if (roomType === 'shared' && !bedPrice) {
     throw new Error('Bed price is required for shared rooms');
   }
-  if (roomType === 'single' && totalBeds !== 1) {
+  if (roomType === 'single' && parseInt(totalBeds) !== 1) {
     throw new Error('Single rooms must have exactly 1 bed');
   }
 
-  // Create room
-  const room = await Room.create({
-    roomNumber,
-    floor: floor || null,
-    buildingId: buildingId || null,
-    totalBeds,
-    availableBeds: totalBeds, // Initially all beds are available
-    status: status || 'available',
-    roomType: roomType || 'shared',
-    roomPrice: roomPrice || null,
-    bedPrice: bedPrice || null,
-    description: description || null,
-    images: images && Array.isArray(images) ? JSON.stringify(images) : null
-  });
+  const bId = buildingId ? parseInt(buildingId) : null;
+  const tBeds = parseInt(totalBeds);
 
-  // Update building room count if buildingId is provided
-  if (buildingId) {
-    const building = await Building.findByPk(buildingId);
-    if (building) {
-      building.roomCount = (building.roomCount || 0) + 1;
-      await building.save();
-    }
-  }
-
-  // Add services if provided
-  if (serviceIds && Array.isArray(serviceIds) && serviceIds.length > 0) {
-    await room.setServices(serviceIds);
-  }
-
-  // Reload with services and building
-  await room.reload({
-    include: [
-      {
-        model: Service,
-        as: 'services',
-        attributes: ['id', 'name', 'description', 'icon']
+  // Create room in transaction to update building count
+  const room = await prisma.$transaction(async (tx) => {
+    const newRoom = await tx.room.create({
+      data: {
+        roomNumber,
+        floor: floor ? parseInt(floor) : null,
+        buildingId: bId,
+        totalBeds: tBeds,
+        availableBeds: tBeds,
+        status: status || 'available',
+        roomType: roomType || 'shared',
+        roomPrice: roomPrice || null,
+        bedPrice: bedPrice || null,
+        description: description || null,
+        images: images && Array.isArray(images) ? JSON.stringify(images) : null,
+        services: {
+          connect: serviceIds && Array.isArray(serviceIds) ? serviceIds.map(id => ({ id: parseInt(id) })) : []
+        }
       },
-      {
-        model: Building,
-        as: 'buildingInfo',
-        attributes: ['id', 'name', 'address']
+      include: {
+        services: {
+          select: { id: true, name: true, description: true, icon: true }
+        },
+        buildingInfo: {
+          select: { id: true, name: true, address: true }
+        }
       }
-    ]
+    });
+
+    if (bId) {
+      const building = await tx.building.findUnique({ where: { id: bId } });
+      if (building) {
+        await tx.building.update({
+          where: { id: bId },
+          data: { roomCount: (building.roomCount || 0) + 1 }
+        });
+      }
+    }
+
+    return newRoom;
   });
 
   // Create notification for admins
@@ -165,33 +182,22 @@ const createRoom = async (roomData) => {
   // Notify students with matching preferences
   try {
     const roomServiceIds = room.services ? room.services.map(s => s.id) : [];
-    const { Service } = require('../models');
-    
-    // Get service names for the notification message
-    const roomServices = await Service.findAll({
-      where: { id: roomServiceIds },
-      attributes: ['id', 'name']
-    });
-    const serviceNames = roomServices.map(s => s.name).join(', ');
-
     const matchingUserIds = await preferenceService.getStudentsWithMatchingPreferences(
       room.roomType,
       roomServiceIds
     );
 
-    // Send notification to each matching student with details about matching services
     for (const userId of matchingUserIds) {
-      // Get student's preferences to find which services matched
-      const { User, Preference } = require('../models');
-      const user = await User.findByPk(userId, {
-        include: [{ model: Preference, as: 'preference' }]
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { preference: true }
       });
 
       if (user && user.preference) {
-        const matchingServices = roomServices.filter(s => 
-          user.preference.preferredServices.includes(s.id)
-        );
-        const matchingServiceNames = matchingServices.map(s => s.name).join(', ');
+        const matchingServiceNames = room.services
+          .filter(s => user.preference.preferredServices.includes(s.id))
+          .map(s => s.name)
+          .join(', ');
 
         let message = `A new room has been created (${roomNumber})`;
         if (matchingServiceNames) {
@@ -215,87 +221,81 @@ const createRoom = async (roomData) => {
     console.error('Error notifying students with matching preferences:', error);
   }
 
-  return room.toJSON();
+  return room;
 };
 
 // Get all rooms
 const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   const where = {};
 
   if (filters.status) {
     where.status = filters.status;
   }
   if (filters.buildingId !== undefined) {
-    where.buildingId = filters.buildingId;
+    where.buildingId = parseInt(filters.buildingId);
   }
   if (filters.floor !== undefined) {
-    where.floor = filters.floor;
+    where.floor = parseInt(filters.floor);
   }
 
-  const { count, rows } = await Room.findAndCountAll({
-    where,
-    include: [
-      {
-        model: Service,
-        as: 'services',
-        attributes: ['id', 'name', 'description', 'icon'],
-        through: { attributes: [] }
-      },
-      {
-        model: Building,
-        as: 'buildingInfo',
-        attributes: ['id', 'name', 'address'],
-        required: false
-      },
-      {
-        model: RoomStudent,
-        as: 'roomStudents',
-      where: { isActive: true },
-      required: false,
-      include: [{
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'role']
-          },
-          {
-            model: College,
-            as: 'college',
-            attributes: ['id', 'name'],
-            required: false
+  const [rooms, count] = await Promise.all([
+    prisma.room.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { roomNumber: 'asc' },
+      include: {
+        services: {
+          select: { id: true, name: true, description: true, icon: true }
+        },
+        buildingInfo: {
+          select: { id: true, name: true, address: true }
+        },
+        roomStudents: {
+          where: { isActive: true },
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                age: true,
+                phoneNumber: true,
+                user: { select: { id: true, name: true, email: true, role: true } },
+                college: { select: { id: true, name: true } }
+              }
+            }
           }
-        ]
-      }]
-    }],
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['roomNumber', 'ASC']]
-  });
+        }
+      }
+    }),
+    prisma.room.count({ where })
+  ]);
 
   // Get pending requests count for each room
-  const roomIds = rows.map(r => r.id);
-  const pendingRequests = await RoomRequest.findAll({
+  const roomIds = rooms.map(r => r.id);
+  const pendingRequests = await prisma.roomRequest.groupBy({
+    by: ['roomId'],
     where: {
-      roomId: { [Op.in]: roomIds },
+      roomId: { in: roomIds },
       status: 'pending'
     },
-    attributes: ['roomId']
+    _count: {
+      id: true
+    }
   });
 
   const requestsMap = {};
   pendingRequests.forEach(req => {
-    requestsMap[req.roomId] = (requestsMap[req.roomId] || 0) + 1;
+    requestsMap[req.roomId] = req._count.id;
   });
 
   return {
-    rooms: rows.map(room => {
-      const roomData = room.toJSON();
-      roomData.occupiedBeds = roomData.roomStudents ? roomData.roomStudents.length : 0;
+    rooms: rooms.map(room => {
+      const roomData = { ...room };
+      roomData.occupiedBeds = room.roomStudents ? room.roomStudents.length : 0;
       roomData.pendingRequestsCount = requestsMap[room.id] || 0;
       return roomData;
     }),
@@ -310,89 +310,64 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
 
 // Get room by ID
 const getRoomById = async (id) => {
-  const room = await Room.findByPk(id, {
-    include: [
-      {
-        model: Service,
-        as: 'services',
-        attributes: ['id', 'name', 'description', 'icon'],
-        through: { attributes: [] }
+  const roomId = parseInt(id);
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    include: {
+      services: {
+        select: { id: true, name: true, description: true, icon: true }
       },
-      {
-        model: Building,
-        as: 'buildingInfo',
-        attributes: ['id', 'name', 'address', 'mapUrl', 'floors'],
-        required: false
+      buildingInfo: {
+        select: { id: true, name: true, address: true, mapUrl: true, floors: true }
       },
-      {
-        model: RoomStudent,
-        as: 'roomStudents',
+      roomStudents: {
         where: { isActive: true },
-        required: false,
-        include: [
-          {
-            model: Student,
-            as: 'student',
-            attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
-            include: [
-              {
-                model: User,
-                as: 'user',
-                attributes: ['id', 'name', 'email', 'role']
-              },
-              {
-                model: College,
-                as: 'college',
-                attributes: ['id', 'name'],
-                required: false
-              }
-            ]
-          },
-          {
-            model: Payment,
-            as: 'payments'
-          }
-        ]
-      },
-      {
-        model: RoomRequest,
-        as: 'requests',
-        where: { status: 'pending' },
-        required: false,
-        include: [{
-          model: Student,
-          as: 'student',
-          attributes: ['id', 'name', 'email', 'age', 'phoneNumber'],
-          include: [
-            {
-              model: User,
-              as: 'user',
-              attributes: ['id', 'name', 'email', 'role']
-            },
-            {
-              model: College,
-              as: 'college',
-              attributes: ['id', 'name'],
-              required: false
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              age: true,
+              phoneNumber: true,
+              user: { select: { id: true, name: true, email: true, role: true } },
+              college: { select: { id: true, name: true } }
             }
-          ]
-        }]
+          },
+          payments: true
+        }
+      },
+      requests: {
+        where: { status: 'pending' },
+        include: {
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              age: true,
+              phoneNumber: true,
+              user: { select: { id: true, name: true, email: true, role: true } },
+              college: { select: { id: true, name: true } }
+            }
+          }
+        }
       }
-    ]
+    }
   });
 
   if (!room) {
     throw new Error('Room not found');
   }
 
-  const roomData = room.toJSON();
-  roomData.occupiedBeds = roomData.roomStudents ? roomData.roomStudents.length : 0;
+  const roomData = { ...room };
+  roomData.occupiedBeds = room.roomStudents ? room.roomStudents.length : 0;
 
   if (roomData.roomStudents) {
-    roomData.roomStudents = roomData.roomStudents.map((studentAssignment) => {
-      const assignment = { ...studentAssignment };
-      assignment.payment = assignment.payments && assignment.payments.length > 0 ? assignment.payments[0] : null;
-      return assignment;
+    roomData.roomStudents = roomData.roomStudents.map((assignment) => {
+      const data = { ...assignment };
+      data.payment = assignment.payments && assignment.payments.length > 0 ? assignment.payments[0] : null;
+      return data;
     });
   }
 
@@ -401,7 +376,11 @@ const getRoomById = async (id) => {
 
 // Update room
 const updateRoom = async (id, roomData) => {
-  const room = await Room.findByPk(id);
+  const roomId = parseInt(id);
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    include: { services: true }
+  });
 
   if (!room) {
     throw new Error('Room not found');
@@ -409,386 +388,272 @@ const updateRoom = async (id, roomData) => {
 
   const { roomNumber, floor, buildingId, totalBeds, description, status, roomType, roomPrice, bedPrice, serviceIds, images } = roomData;
 
-  // Check if room number is being changed and if it's already taken
+  const updateData = {};
+  
   if (roomNumber && roomNumber !== room.roomNumber) {
-    const existingRoom = await Room.findOne({ where: { roomNumber } });
+    const existingRoom = await prisma.room.findUnique({ where: { roomNumber } });
     if (existingRoom) {
       throw new Error('Room number already exists');
     }
-    room.roomNumber = roomNumber;
+    updateData.roomNumber = roomNumber;
   }
 
-  // Update total beds and recalculate available beds
   if (totalBeds !== undefined) {
     const currentOccupied = room.totalBeds - room.availableBeds;
-    room.totalBeds = totalBeds;
-    room.availableBeds = Math.max(0, totalBeds - currentOccupied);
+    const nTotalBeds = parseInt(totalBeds);
+    updateData.totalBeds = nTotalBeds;
+    updateData.availableBeds = Math.max(0, nTotalBeds - currentOccupied);
+    
+    // Auto-update status based on beds
+    if (updateData.availableBeds === 0) {
+      updateData.status = 'reserved';
+    } else if (updateData.availableBeds < nTotalBeds) {
+      updateData.status = 'occupied';
+    } else {
+      updateData.status = 'available';
+    }
   }
 
-  // Validate and update room type and prices
   if (roomType !== undefined) {
-    if (roomType === 'single' && totalBeds !== undefined && totalBeds !== 1) {
+    if (roomType === 'single' && (updateData.totalBeds || room.totalBeds) !== 1) {
       throw new Error('Single rooms must have exactly 1 bed');
     }
-    if (roomType === 'single' && !roomPrice && !room.roomPrice) {
-      throw new Error('Room price is required for single rooms');
-    }
-    if (roomType === 'shared' && !bedPrice && !room.bedPrice) {
-      throw new Error('Bed price is required for shared rooms');
-    }
-    room.roomType = roomType;
+    updateData.roomType = roomType;
   }
 
-  if (floor !== undefined) room.floor = floor;
-  if (buildingId !== undefined) {
-    // Update building room counts if building is changed
-    if (room.buildingId && room.buildingId !== buildingId) {
-      const oldBuilding = await Building.findByPk(room.buildingId);
-      if (oldBuilding) {
-        oldBuilding.roomCount = Math.max(0, (oldBuilding.roomCount || 0) - 1);
-        await oldBuilding.save();
-      }
-    }
-    if (buildingId) {
-      const newBuilding = await Building.findByPk(buildingId);
-      if (newBuilding) {
-        newBuilding.roomCount = (newBuilding.roomCount || 0) + 1;
-        await newBuilding.save();
-      }
-    }
-    room.buildingId = buildingId;
-  }
-  if (description !== undefined) room.description = description;
-  if (status !== undefined) room.status = status;
-  if (roomPrice !== undefined) room.roomPrice = roomPrice;
-  if (bedPrice !== undefined) room.bedPrice = bedPrice;
+  if (floor !== undefined) updateData.floor = parseInt(floor);
+  if (description !== undefined) updateData.description = description;
+  if (status !== undefined) updateData.status = status;
+  if (roomPrice !== undefined) updateData.roomPrice = roomPrice;
+  if (bedPrice !== undefined) updateData.bedPrice = bedPrice;
+  
   if (images !== undefined) {
-    // If images is an empty array, set to null (delete all images)
-    // Otherwise, stringify the array if it has items
-    if (Array.isArray(images) && images.length === 0) {
-      room.images = null;
-    } else if (images && Array.isArray(images) && images.length > 0) {
-      room.images = JSON.stringify(images);
-    } else {
-      room.images = null;
-    }
+    updateData.images = (Array.isArray(images) && images.length > 0) ? JSON.stringify(images) : null;
   }
 
-  await room.save();
-
-  // Update services if provided
   if (serviceIds !== undefined) {
-    if (Array.isArray(serviceIds)) {
-      await room.setServices(serviceIds);
-    } else {
-      await room.setServices([]);
-    }
+    updateData.services = {
+      set: Array.isArray(serviceIds) ? serviceIds.map(sId => ({ id: parseInt(sId) })) : []
+    };
   }
 
-  // Update status based on available beds
-  if (room.availableBeds === 0) {
-    room.status = 'reserved'; // Room is fully occupied, mark as reserved
-  } else if (room.availableBeds < room.totalBeds) {
-    room.status = 'occupied'; // Room is partially occupied
-  } else if (room.availableBeds === room.totalBeds) {
-    if (room.status === 'reserved' || room.status === 'occupied') {
-      room.status = 'available'; // Room is now fully available
-    }
-  }
-  await room.save();
-
-  // Reload with services and building
-  await room.reload({
-    include: [
-      {
-        model: Service,
-        as: 'services',
-        attributes: ['id', 'name', 'description', 'icon'],
-        through: { attributes: [] }
-      },
-      {
-        model: Building,
-        as: 'buildingInfo',
-        attributes: ['id', 'name', 'address']
+  const finalRoom = await prisma.$transaction(async (tx) => {
+    // Handle building count change
+    if (buildingId !== undefined && parseInt(buildingId) !== room.buildingId) {
+      const newBId = buildingId ? parseInt(buildingId) : null;
+      if (room.buildingId) {
+        await tx.building.update({
+          where: { id: room.buildingId },
+          data: { roomCount: { decrement: 1 } }
+        });
       }
-    ]
+      if (newBId) {
+        await tx.building.update({
+          where: { id: newBId },
+          data: { roomCount: { increment: 1 } }
+        });
+      }
+      updateData.buildingId = newBId;
+    }
+
+    return await tx.room.update({
+      where: { id: roomId },
+      data: updateData,
+      include: {
+        services: { select: { id: true, name: true, description: true, icon: true } },
+        buildingInfo: { select: { id: true, name: true, address: true } }
+      }
+    });
   });
 
-  return room.toJSON();
+  return finalRoom;
 };
 
 // Delete room
 const deleteRoom = async (id) => {
-  const room = await Room.findByPk(id);
+  const roomId = parseInt(id);
+  const room = await prisma.room.findUnique({
+    where: { id: roomId }
+  });
 
   if (!room) {
     throw new Error('Room not found');
   }
 
-  // Check if room has active students
-  const activeStudents = await RoomStudent.findAll({
-    where: {
-      roomId: id,
-      isActive: true
-    }
+  const activeCount = await prisma.roomStudent.count({
+    where: { roomId, isActive: true }
   });
 
-  if (activeStudents && activeStudents.length > 0) {
+  if (activeCount > 0) {
     throw new Error('Cannot delete room with active students. Please check out all students first.');
   }
 
-  // Update building room count if room has a building
-  if (room.buildingId) {
-    const building = await Building.findByPk(room.buildingId);
-    if (building) {
-      building.roomCount = Math.max(0, (building.roomCount || 0) - 1);
-      await building.save();
+  await prisma.$transaction(async (tx) => {
+    if (room.buildingId) {
+      await tx.building.update({
+        where: { id: room.buildingId },
+        data: { roomCount: { decrement: 1 } }
+      });
     }
-  }
+    await tx.room.delete({ where: { id: roomId } });
+  });
 
-  await room.destroy();
   return { message: 'Room deleted successfully' };
 };
 
 // Assign student to room
 const assignStudentToRoom = async (roomId, studentId, checkInDate, options = {}) => {
   const { payment: paymentDetails = {}, forceCheckout = false } = options || {};
+  const rId = parseInt(roomId);
+  const sId = parseInt(studentId);
 
-  // Check if room exists
-  const room = await Room.findByPk(roomId);
-  if (!room) {
-    throw new Error('Room not found');
-  }
+  const room = await prisma.room.findUnique({ where: { id: rId } });
+  if (!room) throw new Error('Room not found');
+  if (room.availableBeds <= 0) throw new Error('Room is full. No available beds.');
+  if (room.status === 'maintenance') throw new Error('Room is under maintenance. Cannot assign students.');
 
-  // Check if student exists
-  const student = await Student.findByPk(studentId);
-  if (!student) {
-    throw new Error('Student not found');
-  }
-
-  // Check if room has available beds
-  if (room.availableBeds <= 0) {
-    throw new Error('Room is full. No available beds.');
-  }
-
-  // Check if student already has an active room assignment
-  const existingAssignment = await RoomStudent.findOne({
-    where: {
-      studentId,
-      isActive: true
-    }
+  const existingAssignment = await prisma.roomStudent.findFirst({
+    where: { studentId: sId, isActive: true }
   });
 
   if (existingAssignment) {
-    if (!forceCheckout) {
-      throw new Error('Student is already assigned to a room. Please check out first.');
-    }
-
+    if (!forceCheckout) throw new Error('Student is already assigned to a room. Please check out first.');
     await checkOutAssignment(existingAssignment, checkInDate || new Date());
   }
 
-  // Check if room status allows assignment
-  if (room.status === 'maintenance') {
-    throw new Error('Room is under maintenance. Cannot assign students.');
-  }
+  const assignment = await prisma.$transaction(async (tx) => {
+    const newAssignment = await tx.roomStudent.create({
+      data: {
+        roomId: rId,
+        studentId: sId,
+        checkInDate: checkInDate ? new Date(checkInDate) : new Date(),
+        isActive: true
+      }
+    });
 
-  // Create room assignment
-  const assignment = await RoomStudent.create({
-    roomId,
-    studentId,
-    checkInDate: checkInDate || new Date(),
-    isActive: true
+    const newAvailableBeds = room.availableBeds - 1;
+    let newStatus = room.status;
+    if (newAvailableBeds === 0) newStatus = 'reserved';
+    else if (newAvailableBeds < room.totalBeds) newStatus = 'occupied';
+
+    await tx.room.update({
+      where: { id: rId },
+      data: { availableBeds: newAvailableBeds, status: newStatus }
+    });
+
+    return newAssignment;
   });
-
-  // Update room available beds
-  room.availableBeds -= 1;
-  if (room.availableBeds === 0) {
-    room.status = 'reserved'; // Room is fully occupied, mark as reserved
-  } else if (room.availableBeds < room.totalBeds) {
-    room.status = 'occupied'; // Room is partially occupied
-  }
-  await room.save();
 
   await createPaymentForAssignment(assignment, room, paymentDetails);
 
-  await assignment.reload({
-    include: [
-      { model: Room, as: 'room' },
-      {
-        model: Student,
-        as: 'student',
-        include: [
-          { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
-          { model: College, as: 'college', attributes: ['id', 'name'], required: false }
-        ]
+  const result = await prisma.roomStudent.findUnique({
+    where: { id: assignment.id },
+    include: {
+      room: true,
+      student: {
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          college: { select: { id: true, name: true } }
+        }
       },
-      {
-        model: Payment,
-        as: 'payments'
-      }
-    ]
+      payments: true
+    }
   });
 
-  const assignmentData = assignment.toJSON();
-  assignmentData.payment = assignmentData.payments && assignmentData.payments.length > 0
-    ? assignmentData.payments[0]
-    : null;
-  return assignmentData;
+  const data = { ...result };
+  data.payment = result.payments && result.payments.length > 0 ? result.payments[0] : null;
+  return data;
 };
 
 // Check out student from room
 const checkOutStudentFromRoom = async (studentId, checkOutDate) => {
-  // Find active assignment
-  const assignment = await RoomStudent.findOne({
-    where: {
-      studentId,
-      isActive: true
-    },
-    include: [{ model: Room, as: 'room' }]
+  const sId = parseInt(studentId);
+  const assignment = await prisma.roomStudent.findFirst({
+    where: { studentId: sId, isActive: true },
+    include: { room: true }
   });
 
-  if (!assignment) {
-    throw new Error('Student is not assigned to any room');
-  }
+  if (!assignment) throw new Error('Student is not assigned to any room');
 
-  // Update assignment
-  assignment.isActive = false;
-  assignment.checkOutDate = checkOutDate || new Date();
-  await assignment.save();
+  await checkOutAssignment(assignment, checkOutDate || new Date());
 
-  // Update room available beds
-  const room = await Room.findByPk(assignment.roomId);
-  room.availableBeds += 1;
-  
-  if (room.availableBeds === room.totalBeds) {
-    room.status = 'available'; // Room is now fully available
-  } else if (room.availableBeds > 0) {
-    room.status = 'occupied'; // Room is partially occupied
-  }
-  await room.save();
-
-  return { message: 'Student checked out successfully', assignment: assignment.toJSON() };
+  return { message: 'Student checked out successfully' };
 };
 
 // Get student's current room
 const getStudentRoom = async (studentId) => {
-  const assignment = await RoomStudent.findOne({
-    where: {
-      studentId,
-      isActive: true
-    },
-    include: [
-      { 
-        model: Room, 
-        as: 'room',
-        include: [
-          {
-            model: Building,
-            as: 'buildingInfo',
-            attributes: ['id', 'name', 'address', 'mapUrl', 'floors'],
-            required: false
-          },
-          {
-            model: RoomStudent,
-            as: 'roomStudents',
+  const sId = parseInt(studentId);
+  const assignment = await prisma.roomStudent.findFirst({
+    where: { studentId: sId, isActive: true },
+    include: {
+      room: {
+        include: {
+          buildingInfo: { select: { id: true, name: true, address: true, mapUrl: true, floors: true } },
+          roomStudents: {
             where: { isActive: true },
-            required: false,
-            include: [
-              {
-                model: Student,
-                as: 'student',
-                attributes: ['id', 'name', 'email', 'profileImage', 'year'],
-                include: [
-                  {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'name', 'email', 'profileImage']
-                  },
-                  {
-                    model: College,
-                    as: 'college',
-                    attributes: ['id', 'name'],
-                    required: false
-                  }
-                ]
+            include: {
+              student: {
+                select: { id: true, name: true, email: true, profileImage: true, year: true, user: { select: { id: true, name: true, email: true, profileImage: true } }, college: { select: { id: true, name: true } } }
               },
-              {
-                model: Payment,
-                as: 'payments'
-              }
-            ]
+              payments: true
+            }
           }
-        ]
+        }
       },
-      { model: Student, as: 'student' },
-      { model: Payment, as: 'payments' }
-    ]
+      student: true,
+      payments: true
+    }
   });
 
-  if (!assignment) {
-    return null;
-  }
+  if (!assignment) return null;
 
-  const assignmentData = assignment.toJSON();
-  assignmentData.payment = assignmentData.payments && assignmentData.payments.length > 0
-    ? assignmentData.payments[0]
-    : null;
+  const data = { ...assignment };
+  data.payment = assignment.payments && assignment.payments.length > 0 ? assignment.payments[0] : null;
   
-  // Get all roommates (excluding current student)
-  if (assignmentData.room && assignmentData.room.roomStudents) {
-    assignmentData.roommates = assignmentData.room.roomStudents
-      .filter(rs => rs.student && rs.student.id !== studentId)
+  if (data.room && data.room.roomStudents) {
+    data.roommates = data.room.roomStudents
+      .filter(rs => rs.student && rs.student.id !== sId)
       .map(rs => {
         const roommate = { ...rs.student };
         roommate.payment = rs.payments && rs.payments.length > 0 ? rs.payments[0] : null;
         return roommate;
       });
   } else {
-    assignmentData.roommates = [];
+    data.roommates = [];
   }
 
-  return assignmentData;
+  return data;
 };
 
-// Get room students (all students in a room)
+// Get room students
 const getRoomStudents = async (roomId, includeInactive = false) => {
-  const where = { roomId };
-  if (!includeInactive) {
-    where.isActive = true;
-  }
+  const rId = parseInt(roomId);
+  const where = { roomId: rId };
+  if (!includeInactive) where.isActive = true;
 
-  const assignments = await RoomStudent.findAll({
+  const assignments = await prisma.roomStudent.findMany({
     where,
-    include: [
-      {
-        model: Student,
-        as: 'student',
-        attributes: ['id', 'name', 'email', 'age', 'phoneNumber', 'collegeId'],
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes: ['id', 'name', 'email', 'role']
-          },
-          {
-            model: College,
-            as: 'college',
-            attributes: ['id', 'name'],
-            required: false
-          }
-        ]
+    include: {
+      student: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          age: true,
+          phoneNumber: true,
+          collegeId: true,
+          user: { select: { id: true, name: true, email: true, role: true } },
+          college: { select: { id: true, name: true } }
+        }
       },
-      {
-        model: Payment,
-        as: 'payments'
-      }
-    ],
-    order: [['checkInDate', 'DESC']]
+      payments: true
+    },
+    orderBy: { checkInDate: 'desc' }
   });
 
-  return assignments.map(assignment => {
-    const data = assignment.toJSON();
-    data.payment = data.payments && data.payments.length > 0 ? data.payments[0] : null;
+  return assignments.map(a => {
+    const data = { ...a };
+    data.payment = a.payments && a.payments.length > 0 ? a.payments[0] : null;
     return data;
   });
 };
@@ -804,4 +669,3 @@ module.exports = {
   getStudentRoom,
   getRoomStudents
 };
-

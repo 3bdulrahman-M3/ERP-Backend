@@ -1,22 +1,23 @@
-const { Notification, User } = require('../models');
-const { Op } = require('sequelize');
+const prisma = require('../config/prisma');
 
 // Create notification
 const createNotification = async (userId, type, title, message, relatedId = null, relatedType = null) => {
-  return await Notification.create({
-    userId,
-    type,
-    title,
-    message,
-    relatedId,
-    relatedType,
-    isRead: false
+  return await prisma.notification.create({
+    data: {
+      userId: parseInt(userId),
+      type,
+      title,
+      message,
+      relatedId: relatedId ? parseInt(relatedId) : null,
+      relatedType,
+      isRead: false
+    }
   });
 };
 
 // Create notification for all admins
 const createNotificationForAdmins = async (type, title, message, relatedId = null, relatedType = null) => {
-  const admins = await User.findAll({
+  const admins = await prisma.user.findMany({
     where: {
       role: 'admin',
       isActive: true
@@ -25,14 +26,16 @@ const createNotificationForAdmins = async (type, title, message, relatedId = nul
 
   const notifications = await Promise.all(
     admins.map(admin =>
-      Notification.create({
-        userId: admin.id,
-        type,
-        title,
-        message,
-        relatedId,
-        relatedType,
-        isRead: false
+      prisma.notification.create({
+        data: {
+          userId: admin.id,
+          type,
+          title,
+          message,
+          relatedId: relatedId ? parseInt(relatedId) : null,
+          relatedType,
+          isRead: false
+        }
       })
     )
   );
@@ -42,22 +45,34 @@ const createNotificationForAdmins = async (type, title, message, relatedId = nul
 
 // Get all notifications for a user
 const getUserNotifications = async (userId, page = 1, limit = 20) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
 
-  const { count, rows } = await Notification.findAndCountAll({
-    where: { userId },
-    include: [{
-      model: User,
-      as: 'user',
-      attributes: ['id', 'name', 'email']
-    }],
-    order: [['createdAt', 'DESC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [notifications, count] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId: parseInt(userId) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      skip,
+      take
+    }),
+    prisma.notification.count({
+      where: { userId: parseInt(userId) }
+    })
+  ]);
 
   return {
-    notifications: rows,
+    notifications,
     pagination: {
       total: count,
       page: parseInt(page),
@@ -69,9 +84,9 @@ const getUserNotifications = async (userId, page = 1, limit = 20) => {
 
 // Get unread count
 const getUnreadCount = async (userId) => {
-  return await Notification.count({
+  return await prisma.notification.count({
     where: {
-      userId,
+      userId: parseInt(userId),
       isRead: false
     }
   });
@@ -79,10 +94,13 @@ const getUnreadCount = async (userId) => {
 
 // Mark notification as read
 const markAsRead = async (notificationId, userId) => {
-  const notification = await Notification.findOne({
+  const id = parseInt(notificationId);
+  const uId = parseInt(userId);
+
+  const notification = await prisma.notification.findFirst({
     where: {
-      id: notificationId,
-      userId
+      id,
+      userId: uId
     }
   });
 
@@ -90,30 +108,32 @@ const markAsRead = async (notificationId, userId) => {
     throw new Error('Notification not found');
   }
 
-  notification.isRead = true;
-  await notification.save();
-  return notification;
+  return await prisma.notification.update({
+    where: { id },
+    data: { isRead: true }
+  });
 };
 
 // Mark all notifications as read
 const markAllAsRead = async (userId) => {
-  await Notification.update(
-    { isRead: true },
-    {
-      where: {
-        userId,
-        isRead: false
-      }
-    }
-  );
+  await prisma.notification.updateMany({
+    where: {
+      userId: parseInt(userId),
+      isRead: false
+    },
+    data: { isRead: true }
+  });
 };
 
 // Delete notification
 const deleteNotification = async (notificationId, userId) => {
-  const notification = await Notification.findOne({
+  const id = parseInt(notificationId);
+  const uId = parseInt(userId);
+
+  const notification = await prisma.notification.findFirst({
     where: {
-      id: notificationId,
-      userId
+      id,
+      userId: uId
     }
   });
 
@@ -121,7 +141,10 @@ const deleteNotification = async (notificationId, userId) => {
     throw new Error('Notification not found');
   }
 
-  await notification.destroy();
+  await prisma.notification.delete({
+    where: { id }
+  });
+  
   return { message: 'Notification deleted successfully' };
 };
 
@@ -134,6 +157,3 @@ module.exports = {
   markAllAsRead,
   deleteNotification
 };
-
-
-

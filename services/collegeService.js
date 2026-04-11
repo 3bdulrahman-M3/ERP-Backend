@@ -1,28 +1,28 @@
-const { College, Student } = require('../models');
-const { Sequelize } = require('sequelize');
+const prisma = require('../config/prisma');
 
 // Get all colleges with student count
 const getAllColleges = async (page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const take = parseInt(limit);
   
-  const { count, rows } = await College.findAndCountAll({
-    order: [['name', 'ASC']],
-    limit: parseInt(limit),
-    offset: parseInt(offset)
-  });
+  const [colleges, count] = await Promise.all([
+    prisma.college.findMany({
+      orderBy: { name: 'asc' },
+      skip,
+      take,
+      include: {
+        _count: {
+          select: { students: true }
+        }
+      }
+    }),
+    prisma.college.count()
+  ]);
   
-  // Get student count for each college
-  const collegesWithCount = await Promise.all(
-    rows.map(async (college) => {
-      const studentCount = await Student.count({
-        where: { collegeId: college.id }
-      });
-      
-      const collegeData = college.toJSON();
-      collegeData.studentCount = studentCount;
-      return collegeData;
-    })
-  );
+  const collegesWithCount = colleges.map(college => ({
+    ...college,
+    studentCount: college._count.students
+  }));
   
   return {
     colleges: collegesWithCount,
@@ -37,11 +37,24 @@ const getAllColleges = async (page = 1, limit = 10) => {
 
 // Get college by ID
 const getCollegeById = async (id) => {
-  const college = await College.findByPk(id);
+  const collegeId = parseInt(id);
+  const college = await prisma.college.findUnique({
+    where: { id: collegeId },
+    include: {
+      _count: {
+        select: { students: true }
+      }
+    }
+  });
+  
   if (!college) {
     throw new Error('College not found');
   }
-  return college;
+  
+  return {
+    ...college,
+    studentCount: college._count.students
+  };
 };
 
 // Create college
@@ -49,22 +62,24 @@ const createCollege = async (collegeData) => {
   const { name, description } = collegeData;
 
   // Check if college already exists
-  const existingCollege = await College.findOne({ where: { name } });
+  const existingCollege = await prisma.college.findUnique({ where: { name } });
   if (existingCollege) {
     throw new Error('College with this name already exists');
   }
 
-  const college = await College.create({
-    name,
-    description: description || null
+  return await prisma.college.create({
+    data: {
+      name,
+      description: description || null
+    }
   });
-
-  return college.toJSON();
 };
 
 // Update college
 const updateCollege = async (id, collegeData) => {
-  const college = await College.findByPk(id);
+  const collegeId = parseInt(id);
+  const college = await prisma.college.findUnique({ where: { id: collegeId } });
+  
   if (!college) {
     throw new Error('College not found');
   }
@@ -72,27 +87,31 @@ const updateCollege = async (id, collegeData) => {
   const { name, description } = collegeData;
 
   if (name && name !== college.name) {
-    const existingCollege = await College.findOne({ where: { name } });
+    const existingCollege = await prisma.college.findUnique({ where: { name } });
     if (existingCollege) {
       throw new Error('College with this name already exists');
     }
-    college.name = name;
   }
 
-  if (description !== undefined) college.description = description;
-
-  await college.save();
-  return college.toJSON();
+  return await prisma.college.update({
+    where: { id: collegeId },
+    data: {
+      name: name || undefined,
+      description: description !== undefined ? description : undefined
+    }
+  });
 };
 
 // Delete college
 const deleteCollege = async (id) => {
-  const college = await College.findByPk(id);
+  const collegeId = parseInt(id);
+  const college = await prisma.college.findUnique({ where: { id: collegeId } });
+  
   if (!college) {
     throw new Error('College not found');
   }
 
-  await college.destroy();
+  await prisma.college.delete({ where: { id: collegeId } });
   return { message: 'College deleted successfully' };
 };
 
@@ -103,4 +122,3 @@ module.exports = {
   updateCollege,
   deleteCollege
 };
-
