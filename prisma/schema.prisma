@@ -80,6 +80,7 @@ model User {
   notifications Notification[]
   preference   Preference?
   messages     Message[]
+  adminConversations Conversation[]
 
   @@map("users")
 }
@@ -265,6 +266,7 @@ model Conversation {
   updatedAt     DateTime  @updatedAt
   
   student       Student   @relation(fields: [studentId], references: [id])
+  admin         User?     @relation(fields: [adminId], references: [id])
   messages      Message[]
 
   @@map("conversations")

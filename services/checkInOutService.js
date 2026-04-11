@@ -44,7 +44,8 @@ const checkInStudent = async (studentId, notes = null) => {
     throw new Error('Student not found');
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   
   // Check if student already checked in today
   const existingCheckIn = await prisma.checkInOut.findFirst({
@@ -122,7 +123,8 @@ const checkOutStudent = async (studentId, notes = null) => {
     throw new Error('Student not found');
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   
   // Find today's check-in
   const checkIn = await prisma.checkInOut.findFirst({
@@ -195,7 +197,8 @@ const checkInOutByQRCode = async (qrData, notes = null) => {
     throw new Error('Invalid QR code or student not found');
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   
   // Check if student has checked in today
   const existingCheckIn = await prisma.checkInOut.findFirst({
@@ -222,7 +225,7 @@ const getAllCheckInOuts = async (page = 1, limit = 10, filters = {}) => {
   const where = {};
 
   if (filters.date) {
-    where.date = filters.date;
+    where.date = new Date(filters.date);
   }
 
   if (filters.status) {
@@ -235,8 +238,8 @@ const getAllCheckInOuts = async (page = 1, limit = 10, filters = {}) => {
 
   if (filters.startDate && filters.endDate) {
     where.date = {
-      gte: filters.startDate,
-      lte: filters.endDate
+      gte: new Date(filters.startDate),
+      lte: new Date(filters.endDate)
     };
   }
 
@@ -271,7 +274,8 @@ const getAllCheckInOuts = async (page = 1, limit = 10, filters = {}) => {
 
 // Get today's check-ins
 const getTodayCheckIns = async () => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   
   return await prisma.checkInOut.findMany({
     where: { date: today },
@@ -325,7 +329,8 @@ const getStudentHistory = async (studentId, page = 1, limit = 10) => {
 // Get current student check-in status
 const getCurrentStudentStatus = async (studentId) => {
   const sId = parseInt(studentId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   
   const checkIn = await prisma.checkInOut.findFirst({
     where: {

@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { sequelize } = require('../config/database');
+const prisma = require('../config/prisma');
 const seedAdmin = require('./seedAdmin');
 const seedMeals = require('./seedMeals');
 const seedColleges = require('./seedColleges');
@@ -8,8 +8,8 @@ const seedServices = require('./seedServices');
 const runAllSeeders = async () => {
   try {
     console.log('🌱 Starting all seeders...');
-    await sequelize.authenticate();
-    console.log('✅ Database connection established\n');
+    await prisma.$connect();
+    console.log('✅ Database connection established via Prisma\n');
     
     // Run all seeders in sequence
     console.log('📦 Seeding Admin...');
@@ -28,12 +28,12 @@ const runAllSeeders = async () => {
     await seedServices();
     console.log('');
     
-    await sequelize.close();
+    await prisma.$disconnect();
     console.log('✅ All seeders completed successfully');
     process.exit(0);
   } catch (error) {
     console.error('❌ Error running seeders:', error);
-    await sequelize.close();
+    await prisma.$disconnect();
     process.exit(1);
   }
 };

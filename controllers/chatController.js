@@ -5,64 +5,50 @@ const { Student, User } = require('../models');
 const getOrCreateConversation = async (req, res) => {
   try {
     const userId = req.user.id;
-    const userRole = req.user.role;
+    const userRole = req.user.role.toLowerCase(); // Consistent lowercase comparison
     const { studentId } = req.body;
 
-    if (userRole === 'admin' && studentId) {
+    if (userRole === 'admin') {
+      if (!studentId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Student ID is required for admin'
+        });
+      }
       const conversation = await chatService.getOrCreateConversation(studentId, userId);
-      await conversation.reload({
-        include: [
-          {
-            model: Student,
-            as: 'student',
-            include: [{
-              model: User,
-              as: 'user',
-              attributes: ['id', 'name', 'email']
-            }]
-          }
-        ]
-      });
-      res.json({
+      return res.json({
         success: true,
         data: conversation
       });
-    } else if (userRole === 'student') {
-      const student = await Student.findOne({ where: { userId } });
+    } 
+    
+    if (userRole === 'student') {
+      const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
       if (!student) {
         return res.status(404).json({
           success: false,
-          message: 'Student not found'
+          message: 'Student record not found for this user'
         });
       }
       const conversation = await chatService.getOrCreateConversation(student.id);
-      await conversation.reload({
-        include: [
-          {
-            model: Student,
-            as: 'student',
-            include: [{
-              model: User,
-              as: 'user',
-              attributes: ['id', 'name', 'email']
-            }]
-          }
-        ]
-      });
-      res.json({
+      return res.json({
         success: true,
         data: conversation
       });
-    } else {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid request'
-      });
     }
-  } catch (error) {
+
+    // Role is neither admin nor student
+    console.warn(`Conversation access attempted with invalid role: ${userRole} (User ID: ${userId})`);
     res.status(400).json({
       success: false,
-      message: error.message
+      message: `Invalid access role: ${userRole}`
+    });
+  } catch (error) {
+    console.error('Chat controller error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error processing conversation request',
+      error: error.message
     });
   }
 };

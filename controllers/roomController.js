@@ -239,7 +239,7 @@ const getMyRoom = async (req, res) => {
     
     // Find student by userId
     const { Student } = require('../models');
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
 
     if (!student) {
       return res.status(404).json({

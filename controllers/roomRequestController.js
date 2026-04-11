@@ -7,7 +7,7 @@ const createRoomRequest = async (req, res) => {
     const { Student } = require('../models');
     
     // Get student by userId
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -59,7 +59,7 @@ const getStudentRequests = async (req, res) => {
     const { Student } = require('../models');
     
     // Get student by userId
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
     if (!student) {
       return res.status(404).json({
         success: false,

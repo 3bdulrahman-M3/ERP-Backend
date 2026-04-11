@@ -9,7 +9,7 @@ const createReview = async (studentId, rating, comment) => {
     throw new Error('Rating must be between 1 and 5');
   }
 
-  const existingReview = await prisma.review.findUnique({
+  const existingReview = await prisma.review.findFirst({
     where: { studentId: sId }
   });
 
@@ -87,7 +87,7 @@ const getApprovedReviews = async (limit = 10) => {
 // Get student's own review
 const getStudentReview = async (studentId) => {
   const sId = parseInt(studentId);
-  return await prisma.review.findUnique({
+  return await prisma.review.findFirst({
     where: { studentId: sId },
     include: {
       student: {
@@ -102,7 +102,7 @@ const getStudentReview = async (studentId) => {
 // Update review
 const updateReview = async (studentId, rating, comment) => {
   const sId = parseInt(studentId);
-  const review = await prisma.review.findUnique({ where: { studentId: sId } });
+  const review = await prisma.review.findFirst({ where: { studentId: sId } });
 
   if (!review) throw new Error('Review not found');
 
@@ -112,7 +112,7 @@ const updateReview = async (studentId, rating, comment) => {
   }
 
   return await prisma.review.update({
-    where: { studentId: sId },
+    where: { id: review.id },
     data: {
       rating: nRating,
       comment: comment !== undefined ? comment : undefined,

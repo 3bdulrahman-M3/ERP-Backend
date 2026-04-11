@@ -137,7 +137,7 @@ const getStudentHistory = async (req, res) => {
     // If user is student, verify they can only access their own history
     const userId = req.userId;
     const { Student } = require('../models');
-    const currentStudent = await Student.findOne({ where: { userId } });
+    const currentStudent = await Student.findUnique({ where: { userId: parseInt(userId) } });
     
     if (currentStudent && currentStudent.id !== parseInt(studentId)) {
       // If student is trying to access another student's history, use their own ID
@@ -171,7 +171,7 @@ const getCurrentStatus = async (req, res) => {
   try {
     const userId = req.userId;
     const { Student } = require('../models');
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
 
     if (!student) {
       return res.status(404).json({
@@ -200,7 +200,7 @@ const getMyHistory = async (req, res) => {
   try {
     const userId = req.userId;
     const { Student } = require('../models');
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
 
     if (!student) {
       return res.status(404).json({

@@ -35,7 +35,13 @@ const createRoomRequest = async (studentId, roomId, notes = null) => {
     include: {
       room: {
         include: {
-          services: { select: { id: true, name: true, description: true, icon: true } },
+          services: {
+            include: {
+              service: {
+                select: { id: true, name: true, description: true, icon: true }
+              }
+            }
+          },
           buildingInfo: { select: { id: true, name: true, address: true } }
         }
       },
@@ -52,6 +58,11 @@ const createRoomRequest = async (studentId, roomId, notes = null) => {
     await notificationService.createNotificationForAdmins('room_request', 'New Room Request', `Student ${student.name} has requested room ${room.roomNumber}`, rId, 'room');
   } catch (error) {
     console.error('Error creating notification:', error);
+  }
+
+  // Flatten services
+  if (request && request.room && request.room.services) {
+    request.room.services = request.room.services.map(rs => rs.service);
   }
 
   return request;
@@ -80,7 +91,13 @@ const getMatchingRooms = async (userId, page = 1, limit = 10) => {
   let rooms = await prisma.room.findMany({
     where,
     include: {
-      services: { select: { id: true, name: true, description: true, icon: true } },
+      services: {
+        include: {
+          service: {
+            select: { id: true, name: true, description: true, icon: true }
+          }
+        }
+      },
       buildingInfo: { select: { id: true, name: true, address: true } },
       roomStudents: { where: { isActive: true }, select: { id: true } }
     },
@@ -92,7 +109,7 @@ const getMatchingRooms = async (userId, page = 1, limit = 10) => {
   // Filter rooms by service preferences
   if (preferences.preferredServices && preferences.preferredServices.length > 0) {
     rooms = rooms.filter(room => {
-      const roomServiceIds = room.services.map(s => s.id);
+      const roomServiceIds = room.services.map(rs => rs.service.id);
       return preferences.preferredServices.some(p => roomServiceIds.includes(p));
     });
   }
@@ -112,12 +129,16 @@ const getMatchingRooms = async (userId, page = 1, limit = 10) => {
 
   const formattedRooms = rooms
     .filter(room => !excludedRoomIds.includes(room.id))
-    .map(room => ({
-      ...room,
-      occupiedBeds: room.roomStudents.length,
-      hasPendingRequest: requestMap[room.id] === 'pending',
-      requestStatus: requestMap[room.id] || null
-    }));
+    .map(room => {
+      const roomData = { ...room };
+      roomData.services = room.services ? room.services.map(rs => rs.service) : [];
+      return {
+        ...roomData,
+        occupiedBeds: room.roomStudents.length,
+        hasPendingRequest: requestMap[room.id] === 'pending',
+        requestStatus: requestMap[room.id] || null
+      };
+    });
 
   return {
     rooms: formattedRooms,
@@ -142,7 +163,13 @@ const getStudentRequests = async (studentId, page = 1, limit = 10) => {
       include: {
         room: {
           include: {
-            services: { select: { id: true, name: true, description: true, icon: true } },
+            services: {
+              include: {
+                service: {
+                  select: { id: true, name: true, description: true, icon: true }
+                }
+              }
+            },
             buildingInfo: { select: { id: true, name: true, address: true } }
           }
         }
@@ -154,8 +181,16 @@ const getStudentRequests = async (studentId, page = 1, limit = 10) => {
     prisma.roomRequest.count({ where: { studentId: sId } })
   ]);
 
+  const processedRequests = requests.map(req => {
+    const data = { ...req };
+    if (data.room && data.room.services) {
+      data.room.services = data.room.services.map(rs => rs.service);
+    }
+    return data;
+  });
+
   return {
-    requests,
+    requests: processedRequests,
     pagination: {
       total: count,
       page: parseInt(page),

@@ -207,7 +207,7 @@ const getProfile = async (userId) => {
 
 // Register new student
 const register = async (registerData) => {
-  const { name, email, password } = registerData;
+  const { name, email, password, phoneNumber, college, year, age } = registerData;
 
   // Check if email already exists
   const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -215,33 +215,69 @@ const register = async (registerData) => {
     throw new Error('Email is already in use');
   }
 
-  // Hash password manually (was done by Sequelize hook before)
+  // Hash password manually
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email,
-      password: hashedPassword,
-      role: 'student',
-      isActive: true
-    }
+  // Use transaction to create both User and Student
+  const result = await prisma.$transaction(async (tx) => {
+    // Create user
+    const user = await tx.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role: 'student',
+        isActive: true
+      }
+    });
+
+    // Create student
+    const student = await tx.student.create({
+      data: {
+        userId: user.id,
+        name,
+        email,
+        phoneNumber: phoneNumber || null,
+        collegeId: college ? parseInt(college) : null,
+        year: year ? parseInt(year) : null,
+        age: age ? parseInt(age) : null,
+        isActive: true
+      }
+    });
+
+    // Generate QR code for student
+    const QRCode = require('qrcode');
+    const qrData = JSON.stringify({
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      type: 'student'
+    });
+    const qrCode = await QRCode.toDataURL(qrData);
+
+    // Update student with QR code
+    await tx.student.update({
+      where: { id: student.id },
+      data: { qrCode }
+    });
+
+    return { user, student };
   });
 
   // Generate tokens for immediate login
-  const accessToken = generateAccessToken(user.id, user.role);
+  const accessToken = generateAccessToken(result.user.id, result.user.role);
   const refreshToken = generateRefreshToken();
 
   // Save refresh token
-  await saveRefreshToken(user.id, refreshToken);
+  await saveRefreshToken(result.user.id, refreshToken);
 
-  const { password: _, ...userWithoutPassword } = user;
+  const { password: _, ...userWithoutPassword } = result.user;
 
   return {
     accessToken,
     refreshToken,
-    user: userWithoutPassword
+    user: userWithoutPassword,
+    student: result.student
   };
 };
 

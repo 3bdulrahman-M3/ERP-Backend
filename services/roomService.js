@@ -140,12 +140,18 @@ const createRoom = async (roomData) => {
         description: description || null,
         images: images && Array.isArray(images) ? JSON.stringify(images) : null,
         services: {
-          connect: serviceIds && Array.isArray(serviceIds) ? serviceIds.map(id => ({ id: parseInt(id) })) : []
+          create: serviceIds && Array.isArray(serviceIds) ? serviceIds.map(sId => ({
+            service: { connect: { id: parseInt(sId) } }
+          })) : []
         }
       },
       include: {
         services: {
-          select: { id: true, name: true, description: true, icon: true }
+          include: {
+            service: {
+              select: { id: true, name: true, description: true, icon: true }
+            }
+          }
         },
         buildingInfo: {
           select: { id: true, name: true, address: true }
@@ -221,6 +227,11 @@ const createRoom = async (roomData) => {
     console.error('Error notifying students with matching preferences:', error);
   }
 
+  // Flatten services
+  if (room && room.services) {
+    room.services = room.services.map(rs => rs.service);
+  }
+  
   return room;
 };
 
@@ -248,7 +259,11 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
       orderBy: { roomNumber: 'asc' },
       include: {
         services: {
-          select: { id: true, name: true, description: true, icon: true }
+          include: {
+            service: {
+              select: { id: true, name: true, description: true, icon: true }
+            }
+          }
         },
         buildingInfo: {
           select: { id: true, name: true, address: true }
@@ -295,6 +310,7 @@ const getAllRooms = async (page = 1, limit = 10, filters = {}) => {
   return {
     rooms: rooms.map(room => {
       const roomData = { ...room };
+      roomData.services = room.services ? room.services.map(rs => rs.service) : [];
       roomData.occupiedBeds = room.roomStudents ? room.roomStudents.length : 0;
       roomData.pendingRequestsCount = requestsMap[room.id] || 0;
       return roomData;
@@ -315,7 +331,11 @@ const getRoomById = async (id) => {
     where: { id: roomId },
     include: {
       services: {
-        select: { id: true, name: true, description: true, icon: true }
+        include: {
+          service: {
+            select: { id: true, name: true, description: true, icon: true }
+          }
+        }
       },
       buildingInfo: {
         select: { id: true, name: true, address: true, mapUrl: true, floors: true }
@@ -337,7 +357,7 @@ const getRoomById = async (id) => {
           payments: true
         }
       },
-      requests: {
+      roomRequests: {
         where: { status: 'pending' },
         include: {
           student: {
@@ -361,7 +381,10 @@ const getRoomById = async (id) => {
   }
 
   const roomData = { ...room };
+  roomData.services = room.services ? room.services.map(rs => rs.service) : [];
   roomData.occupiedBeds = room.roomStudents ? room.roomStudents.length : 0;
+  roomData.requests = room.roomRequests || [];
+  delete roomData.roomRequests;
 
   if (roomData.roomStudents) {
     roomData.roomStudents = roomData.roomStudents.map((assignment) => {
@@ -433,7 +456,10 @@ const updateRoom = async (id, roomData) => {
 
   if (serviceIds !== undefined) {
     updateData.services = {
-      set: Array.isArray(serviceIds) ? serviceIds.map(sId => ({ id: parseInt(sId) })) : []
+      deleteMany: {},
+      create: Array.isArray(serviceIds) ? serviceIds.map(sId => ({
+        service: { connect: { id: parseInt(sId) } }
+      })) : []
     };
   }
 
@@ -460,11 +486,22 @@ const updateRoom = async (id, roomData) => {
       where: { id: roomId },
       data: updateData,
       include: {
-        services: { select: { id: true, name: true, description: true, icon: true } },
+        services: {
+          include: {
+            service: {
+              select: { id: true, name: true, description: true, icon: true }
+            }
+          }
+        },
         buildingInfo: { select: { id: true, name: true, address: true } }
       }
     });
   });
+
+  // Flatten services
+  if (finalRoom && finalRoom.services) {
+    finalRoom.services = finalRoom.services.map(rs => rs.service);
+  }
 
   return finalRoom;
 };
@@ -472,6 +509,7 @@ const updateRoom = async (id, roomData) => {
 // Delete room
 const deleteRoom = async (id) => {
   const roomId = parseInt(id);
+
   const room = await prisma.room.findUnique({
     where: { id: roomId }
   });
@@ -489,13 +527,25 @@ const deleteRoom = async (id) => {
   }
 
   await prisma.$transaction(async (tx) => {
+    // Delete room students (inactive ones) first to avoid foreign key issues
+    // Since SQL constraints might prevent deletion even with isActive: false
+    // Also, RoomRequest and RoomService already have onDelete: Cascade in schema
+    await tx.roomStudent.deleteMany({
+      where: { roomId: roomId }
+    });
+
     if (room.buildingId) {
       await tx.building.update({
         where: { id: room.buildingId },
         data: { roomCount: { decrement: 1 } }
       });
     }
-    await tx.room.delete({ where: { id: roomId } });
+
+    // Use deleteMany to avoid "record not found" errors if a race condition occurs, 
+    // although findUnique above and the transaction should handle it.
+    await tx.room.delete({
+      where: { id: roomId }
+    });
   });
 
   return { message: 'Room deleted successfully' };

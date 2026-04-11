@@ -16,9 +16,9 @@ const seedColleges = async () => {
     ];
 
     for (const collegeData of colleges) {
-      const existingCollege = await College.findOne({ where: { name: collegeData.name } });
+      const existingCollege = await College.findUnique({ where: { name: collegeData.name } });
       if (!existingCollege) {
-        await College.create(collegeData);
+        await College.create({ data: collegeData });
         console.log(`✅ Created college: ${collegeData.name}`);
       } else {
         console.log(`⏭️  College already exists: ${collegeData.name}`);

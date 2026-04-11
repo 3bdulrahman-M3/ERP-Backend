@@ -11,9 +11,9 @@ const seedServices = async () => {
     ];
 
     for (const serviceData of services) {
-      const existingService = await Service.findOne({ where: { name: serviceData.name } });
+      const existingService = await Service.findUnique({ where: { name: serviceData.name } });
       if (!existingService) {
-        await Service.create(serviceData);
+        await Service.create({ data: serviceData });
         console.log(`✅ Created service: ${serviceData.name}`);
       } else {
         console.log(`⚠️  Service already exists: ${serviceData.name}`);

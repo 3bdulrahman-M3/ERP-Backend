@@ -8,8 +8,8 @@ const createReview = async (req, res) => {
     const { rating, comment } = req.body;
 
     // Get student by userId
-    const student = await Student.findOne({
-      where: { userId }
+    const student = await Student.findUnique({
+      where: { userId: parseInt(userId) }
     });
 
     if (!student) {
@@ -79,8 +79,8 @@ const getStudentReview = async (req, res) => {
     const userId = req.user.id;
 
     // Get student by userId
-    const student = await Student.findOne({
-      where: { userId }
+    const student = await Student.findUnique({
+      where: { userId: parseInt(userId) }
     });
 
     if (!student) {
@@ -111,8 +111,8 @@ const updateReview = async (req, res) => {
     const { rating, comment } = req.body;
 
     // Get student by userId
-    const student = await Student.findOne({
-      where: { userId }
+    const student = await Student.findUnique({
+      where: { userId: parseInt(userId) }
     });
 
     if (!student) {

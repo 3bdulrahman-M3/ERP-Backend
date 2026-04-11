@@ -9,9 +9,22 @@ const seedMeals = async () => {
     ];
 
     for (const mealData of meals) {
-      const existingMeal = await Meal.findOne({ where: { name: mealData.name } });
+      const existingMeal = await Meal.findFirst({ where: { name: mealData.name } });
       if (!existingMeal) {
-        await Meal.create(mealData);
+        const [sh, sm, ss] = mealData.startTime.split(':').map(Number);
+        const [eh, em, es] = mealData.endTime.split(':').map(Number);
+        const startTime = new Date(0);
+        startTime.setUTCHours(sh || 0, sm || 0, ss || 0, 0);
+        const endTime = new Date(0);
+        endTime.setUTCHours(eh || 0, em || 0, es || 0, 0);
+
+        await Meal.create({
+          data: {
+            ...mealData,
+            startTime,
+            endTime
+          }
+        });
         console.log(`✅ Created meal: ${mealData.name} (${mealData.startTime} - ${mealData.endTime})`);
       } else {
         console.log(`⏭️  Meal already exists: ${mealData.name}`);

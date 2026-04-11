@@ -326,17 +326,23 @@ const deleteStudent = async (id) => {
 
   const userId = student.userId;
 
-  // We can delete the user if it exists, which will cascade to student
-  // Or delete student first. Given the schema, deleting user is often cleaner.
-  if (userId) {
-    await prisma.user.delete({
-      where: { id: userId }
+  await prisma.$transaction(async (tx) => {
+    // Delete room assignments first as they don't cascade automatically in schema
+    await tx.roomStudent.deleteMany({
+      where: { studentId: studentId }
     });
-  } else {
-    await prisma.student.delete({
-      where: { id: studentId }
-    });
-  }
+
+    // Deleting the user will cascade to the student profile and other relations correctly
+    if (userId) {
+      await tx.user.delete({
+        where: { id: userId }
+      });
+    } else {
+      await tx.student.delete({
+        where: { id: studentId }
+      });
+    }
+  });
 
   return { message: 'Student deleted successfully' };
 };

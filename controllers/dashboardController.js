@@ -5,7 +5,7 @@ const checkStudentProfile = async (req, res) => {
   try {
     const userId = req.userId;
     const { Student } = require('../models');
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
 
     res.json({
       success: true,
@@ -27,7 +27,7 @@ const getStudentDashboard = async (req, res) => {
     
     // Find student by userId
     const { Student } = require('../models');
-    const student = await Student.findOne({ where: { userId } });
+    const student = await Student.findUnique({ where: { userId: parseInt(userId) } });
 
     if (!student) {
       return res.status(404).json({
