@@ -33,3 +33,7 @@ build/
 # Uploads
 uploads/
 
+
+/generated/prisma
+
+/generated/prisma

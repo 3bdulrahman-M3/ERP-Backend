@@ -1,0 +1,387 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  admin
+  student
+}
+
+enum Status {
+  available
+  occupied
+  maintenance
+  reserved
+}
+
+enum RoomType {
+  single
+  shared
+}
+
+enum SenderRole {
+  admin
+  student
+}
+
+enum AttachmentType {
+  image
+  file
+}
+
+enum CheckInOutStatus {
+  checked_in
+  checked_out
+}
+
+enum MealName {
+  breakfast
+  lunch
+  dinner
+}
+
+enum PaymentStatus {
+  paid
+  partial
+  unpaid
+}
+
+enum PaymentMethod {
+  cash
+  visa
+  bank_transfer
+  other
+}
+
+enum RequestStatus {
+  pending
+  approved
+  rejected
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  name         String
+  email        String         @unique
+  password     String
+  role         Role           @default(student)
+  isActive     Boolean        @default(true)
+  profileImage String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  refreshTokens RefreshToken[]
+  student      Student?
+  notifications Notification[]
+  preference   Preference?
+  messages     Message[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Student {
+  id            Int            @id @default(autoincrement())
+  name          String
+  email         String         @unique
+  collegeId     Int?
+  year          Int?
+  age           Int
+  phoneNumber   String
+  qrCode        String?
+  userId        Int?           @unique
+  profileImage  String?
+  governorate   String?
+  address       String?
+  guardianPhone String?
+  idCardImage   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college       College?       @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+  roomStudents  RoomStudent[]
+  checkInOuts   CheckInOut[]
+  conversation  Conversation?
+  roomRequests  RoomRequest[]
+  payments      Payment[]
+  reviews       Review[]
+
+  @@map("students")
+}
+
+model College {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  students    Student[]
+
+  @@map("colleges")
+}
+
+model Building {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String?
+  mapUrl    String?
+  floors    Int?
+  roomCount Int      @default(0)
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  rooms     Room[]
+
+  @@map("buildings")
+}
+
+model Room {
+  id            Int           @id @default(autoincrement())
+  roomNumber    String        @unique
+  floor         Int?
+  building      String?
+  buildingId    Int?
+  totalBeds     Int
+  availableBeds Int
+  status        Status        @default(available)
+  roomType      RoomType      @default(shared)
+  roomPrice     Decimal?      @db.Decimal(10, 2)
+  bedPrice      Decimal?      @db.Decimal(10, 2)
+  description   String?
+  images        Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  buildingInfo  Building?     @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  roomStudents  RoomStudent[]
+  roomRequests  RoomRequest[]
+  payments      Payment[]
+  services      RoomService[]
+
+  @@map("rooms")
+}
+
+model RoomStudent {
+  id           Int       @id @default(autoincrement())
+  roomId       Int
+  studentId    Int
+  checkInDate  DateTime  @default(now())
+  checkOutDate DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  @@map("room_students")
+}
+
+model Service {
+  id          Int           @id @default(autoincrement())
+  name        String        @unique
+  description String?
+  icon        String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  rooms       RoomService[]
+
+  @@map("services")
+}
+
+model RoomService {
+  roomId    Int
+  serviceId Int
+  
+  room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, serviceId])
+  @@map("room_services")
+}
+
+model CheckInOut {
+  id           Int              @id @default(autoincrement())
+  studentId    Int
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  date         DateTime         @db.Date
+  status       CheckInOutStatus @default(checked_in)
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, date])
+  @@index([date])
+  @@index([status])
+  @@map("check_in_out")
+}
+
+model Meal {
+  id        Int      @id @default(autoincrement())
+  name      MealName
+  startTime DateTime @db.Time
+  endTime   DateTime @db.Time
+  isActive  Boolean  @default(true)
+  category  String?
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("meals")
+}
+
+model Conversation {
+  id            Int       @id @default(autoincrement())
+  studentId     Int       @unique
+  adminId       Int?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  student       Student   @relation(fields: [studentId], references: [id])
+  messages      Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             Int             @id @default(autoincrement())
+  conversationId Int
+  senderId       Int
+  senderRole     SenderRole
+  content        String?
+  attachmentUrl  String?
+  attachmentType AttachmentType?
+  attachmentName String?
+  isRead         Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  
+  conversation   Conversation    @relation(fields: [conversationId], references: [id])
+  sender         User            @relation(fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  type        String
+  title       String
+  message     String
+  relatedId   Int?
+  relatedType String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Preference {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @unique
+  roomType          RoomType?
+  preferredServices Json?    @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@map("preferences")
+}
+
+model RoomRequest {
+  id        Int           @id @default(autoincrement())
+  roomId    Int
+  studentId Int
+  status    RequestStatus @default(pending)
+  notes     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  
+  room      Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("room_requests")
+}
+
+model Payment {
+  id              Int           @id @default(autoincrement())
+  roomId          Int
+  studentId       Int
+  roomStudentId   Int           @unique
+  amountDue       Decimal       @default(0) @db.Decimal(10, 2)
+  amountPaid      Decimal       @default(0) @db.Decimal(10, 2)
+  remainingAmount Decimal       @default(0) @db.Decimal(10, 2)
+  status          PaymentStatus @default(unpaid)
+  paymentMethod   PaymentMethod @default(cash)
+  paymentDate     DateTime      @default(now())
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  room            Room          @relation(fields: [roomId], references: [id])
+  student         Student       @relation(fields: [studentId], references: [id])
+  assignment      RoomStudent   @relation(fields: [roomStudentId], references: [id])
+
+  @@map("payments")
+}
+
+model RegistrationRequest {
+  id          Int           @id @default(autoincrement())
+  name        String
+  email       String        @unique
+  password    String
+  phoneNumber String?
+  college     String?
+  year        String?
+  age         Int?
+  message     String?
+  status      RequestStatus @default(pending)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("registration_requests")
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  studentId  Int
+  rating     Int
+  comment    String?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
