@@ -17,7 +17,8 @@
     "check:env": "node scripts/check-env.js",
     "fix:category": "node scripts/fix-category-enum.js",
     "cleanup:users": "node scripts/cleanup-orphaned-users.js",
-    "postinstall": "echo 'Installation complete. Run npm run migrate to set up database.'"
+    "build": "prisma generate",
+    "postinstall": "prisma generate"
   },
   "keywords": [
     "erp",
