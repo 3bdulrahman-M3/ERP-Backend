@@ -137,7 +137,7 @@ app.use('/api/reviews', reviewRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('🔴 Global Error Handler:', err.stack);
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error',
@@ -149,23 +149,24 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Page not found'
+    message: `Route ${req.method} ${req.url} not found`
   });
 });
 
-// Start server
+// Start server function
 const startServer = async () => {
   try {
+    // Skip DB authentication and server listening on Vercel
+    // Vercel handles the invocation and we should connect lazily or handled by the bridge
+    if (process.env.VERCEL) {
+      console.log('🚀 Running on Vercel environment');
+      return;
+    }
+
     // Debug: Print environment info
     console.log('\n🔍 Environment Debug Info:');
     console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
     console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? '✅ Set (hidden)' : '❌ NOT SET'}`);
-    console.log(`   DB_HOST: ${process.env.DB_HOST || 'not set'}`);
-    console.log(`   DB_NAME: ${process.env.DB_NAME || 'not set'}`);
-    console.log(`   DB_USER: ${process.env.DB_USER || 'not set'}`);
-    console.log(`   DB_PORT: ${process.env.DB_PORT || 'not set'}`);
-    console.log(`   DB_PASSWORD: ${process.env.DB_PASSWORD ? '✅ Set (hidden)' : 'not set'}`);
-    console.log('');
     
     // Test database connection with timeout
     console.log('🔄 Attempting to connect to database...');
@@ -180,13 +181,10 @@ const startServer = async () => {
     } catch (dbError) {
       console.error('❌ Database connection failed!');
       console.error(`   Error: ${dbError.message}`);
-      if (!process.env.DATABASE_URL && !process.env.DB_HOST) {
-        console.error('\n📝 SOLUTION: Add DATABASE_URL to Koyeb Variables:');
-        console.error('   1. Go to Koyeb Dashboard → Your App → Variables');
-        console.error('   2. Add: DATABASE_URL=postgresql://user:pass@host:port/db');
-        console.error('   3. Restart the app');
+      // Don't exit process if we're not in a standalone start
+      if (require.main === module) {
+        process.exit(1);
       }
-      throw dbError;
     }
     
     // Run seeder if enabled
@@ -199,76 +197,30 @@ const startServer = async () => {
       }
     }
     
-    // Try to free port before starting (only in development)
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        const { killPort } = require('./utils/portHandler');
-        const portResult = await killPort(PORT);
-        if (portResult.success && portResult.pids && portResult.pids.length > 0) {
-          console.log(`✅ Freed port ${PORT} (killed ${portResult.pids.length} process(es))`);
-          // Wait a moment for port to be fully released
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (error) {
-        // Ignore port handler errors in production or if module doesn't exist
-        console.log('⚠️  Port handler skipped');
-      }
-    }
-    
     // Validate PORT is a valid number
     if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
       throw new Error(`Invalid PORT: ${PORT}. Must be a number between 1 and 65535.`);
     }
     
-    console.log(`🔧 Starting server on port ${PORT}...`);
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      if (process.env.NODE_ENV === 'production') {
-        console.log(`📍 Production server ready`);
-      } else {
+    if (require.main === module) {
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on port ${PORT}`);
         console.log(`📍 URL: http://localhost:${PORT}`);
-      }
-    });
-
-    // Handle server errors
-    server.on('error', async (error) => {
-      if (error.code === 'EADDRINUSE') {
-        console.log(`⚠️  Port ${PORT} is still in use. Attempting to free it...`);
-        const result = await killPort(PORT);
-        
-        if (result.success) {
-          console.log(`✅ ${result.message}`);
-          console.log('🔄 Retrying to start server...');
-          // Wait a moment then retry
-          setTimeout(() => {
-            const retryServer = app.listen(PORT, () => {
-              console.log(`🚀 Server running on port ${PORT}`);
-              console.log(`📍 URL: http://localhost:${PORT}`);
-            });
-            
-            retryServer.on('error', (err) => {
-              console.error(`❌ Port ${PORT} is still in use after retry.`);
-              console.error(`💡 Please manually kill the process: netstat -ano | findstr :${PORT}`);
-              process.exit(1);
-            });
-          }, 1000);
-        } else {
-          console.error(`❌ Could not free port ${PORT}`);
-          console.error(`💡 Please manually kill the process: netstat -ano | findstr :${PORT}`);
-          process.exit(1);
-        }
-      } else {
-        console.error('❌ Server error:', error);
-        process.exit(1);
-      }
-    });
+      });
+    }
   } catch (error) {
-    console.error('❌ Database connection error:', error);
-    process.exit(1);
+    console.error('❌ Startup error:', error);
+    if (require.main === module) {
+      process.exit(1);
+    }
   }
 };
 
-startServer();
+// Only run standalone server if not required as a module (e.g., by Vercel)
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;
+
 

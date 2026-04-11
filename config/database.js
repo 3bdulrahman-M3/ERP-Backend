@@ -74,11 +74,13 @@ if (process.env.DATABASE_URL) {
     console.log('📋 Database Configuration:');
     console.log(`   Using DATABASE_URL`);
     console.log(`   Host: ${url.hostname}`);
-    console.log(`   Port: ${url.port}`);
+    console.log(`   Port: ${url.port || '5432'}`);
     console.log(`   Database: ${url.pathname.slice(1)}`);
     console.log(`   User: ${url.username}`);
+    console.log(`   SSL required: ${needsSSL(process.env.DATABASE_URL)}`);
   } catch (e) {
-    console.log('⚠️  DATABASE_URL format issue');
+    console.log('⚠️  DATABASE_URL provided but could not be parsed as a standard URL');
+    // Still try to use it
   }
 } else if (hasIndividualVars) {
   console.log('📋 Database Configuration:');
