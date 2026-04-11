@@ -57,8 +57,7 @@ function getSSLConfig(requireSSL) {
     ssl: {
       require: true,
       rejectUnauthorized: false  // Accept self-signed certificates (required for Railway/Koyeb)
-    },
-    native: true  // Use native PostgreSQL client for better SSL support
+    }
   };
 }
 
