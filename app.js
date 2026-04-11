@@ -37,30 +37,29 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Middlewares
-// 1. إعدادات CORS المتوافقة مع Vercel (Production-safe)
-// 1. إعدادات CORS (مفتوحة للكل مع دعم الـ Credentials)
-const corsOptions = {
-  origin: true,
+const allowedOrigins = [
+  'https://erp-frontend-mocha-three.vercel.app',
+  'http://localhost:4200'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   optionsSuccessStatus: 200
-};
+}));
 
-app.use(cors(corsOptions));
-
-// 2. معالجة الـ Preflight لجميع المسارات بنفس الإعدادات (Safety Net)
-app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    const origin = req.headers.origin;
-    res.header("Access-Control-Allow-Origin", origin || "*");
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-    res.header("Access-Control-Allow-Credentials", "true");
-    return res.sendStatus(200);
-  }
-  next();
-});
-
-app.options("*", cors(corsOptions));
+// Ensure preflight works for all routes
+app.options('*', cors());
 
 // 3. تحليل البيانات
 app.use(express.json());
