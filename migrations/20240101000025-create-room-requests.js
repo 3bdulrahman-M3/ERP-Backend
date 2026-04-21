@@ -5,7 +5,7 @@ module.exports = {
     // Create enum for request status
     await queryInterface.sequelize.query(`
       DO $$ BEGIN
-        CREATE TYPE enum_room_requests_status AS ENUM ('pending', 'accepted', 'rejected');
+        CREATE TYPE enum_room_requests_status AS ENUM ('pending', 'approved', 'rejected');
       EXCEPTION
         WHEN duplicate_object THEN null;
       END $$;
@@ -38,7 +38,7 @@ module.exports = {
         onUpdate: 'CASCADE'
       },
       status: {
-        type: DataTypes.ENUM('pending', 'accepted', 'rejected'),
+        type: DataTypes.ENUM('pending', 'approved', 'rejected'),
         allowNull: false,
         defaultValue: 'pending'
       },

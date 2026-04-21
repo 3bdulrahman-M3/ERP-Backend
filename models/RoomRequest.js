@@ -28,7 +28,7 @@ const RoomRequest = sequelize.define('RoomRequest', {
     onUpdate: 'CASCADE'
   },
   status: {
-    type: DataTypes.ENUM('pending', 'accepted', 'rejected'),
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
     allowNull: false,
     defaultValue: 'pending'
   },

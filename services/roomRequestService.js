@@ -274,7 +274,7 @@ const acceptRoomRequest = async (requestId) => {
 
   await prisma.roomRequest.update({
     where: { id: rId },
-    data: { status: 'accepted' }
+    data: { status: 'approved' }
   });
 
   await prisma.roomRequest.updateMany({
