@@ -360,12 +360,13 @@ const deleteStudent = async (id) => {
     });
 
     // 6. Deleting the user will cascade to the student profile
+    // Using deleteMany to avoid "Record not found" error if the record was already deleted
     if (userId) {
-      await tx.user.delete({
+      await tx.user.deleteMany({
         where: { id: userId }
       });
     } else {
-      await tx.student.delete({
+      await tx.student.deleteMany({
         where: { id: studentId }
       });
     }
