@@ -247,6 +247,10 @@ const acceptRoomRequest = async (requestId) => {
   });
 
   if (!request) throw new Error('Request not found');
+  
+  // If already approved, return success (make it idempotent)
+  if (request.status === 'approved') return request;
+  
   if (request.status !== 'pending') throw new Error('Request is not pending');
   if (request.room.availableBeds <= 0) throw new Error('Room has no available beds');
 
@@ -303,6 +307,10 @@ const rejectRoomRequest = async (requestId) => {
   });
 
   if (!request) throw new Error('Request not found');
+  
+  // If already rejected, return success (make it idempotent)
+  if (request.status === 'rejected') return request;
+  
   if (request.status !== 'pending') throw new Error('Request is not pending');
 
   const updatedRequest = await prisma.roomRequest.update({

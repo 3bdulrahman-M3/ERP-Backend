@@ -349,17 +349,33 @@ const deleteStudent = async (id) => {
       });
     }
 
-    // 4. Delete payments tied to the student
+    // 4. Delete reviews by the student
+    await tx.review.deleteMany({
+      where: { studentId: studentId }
+    });
+
+    // 5. Delete room requests by the student
+    await tx.roomRequest.deleteMany({
+      where: { studentId: studentId }
+    });
+
+    // 6. Delete check-in/out records
+    await tx.checkInOut.deleteMany({
+      where: { studentId: studentId }
+    });
+
+    // 7. Delete payments tied to the student
+    // Note: We delete payments first because they depend on roomStudent
     await tx.payment.deleteMany({
       where: { studentId: studentId }
     });
 
-    // 5. Delete room assignments
+    // 8. Delete room assignments
     await tx.roomStudent.deleteMany({
       where: { studentId: studentId }
     });
 
-    // 6. Deleting the user will cascade to the student profile
+    // 9. Deleting the user will cascade to the student profile
     // Using deleteMany to avoid "Record not found" error if the record was already deleted
     if (userId) {
       await tx.user.deleteMany({

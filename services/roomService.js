@@ -527,9 +527,12 @@ const deleteRoom = async (id) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Delete room students (inactive ones) first to avoid foreign key issues
-    // Since SQL constraints might prevent deletion even with isActive: false
-    // Also, RoomRequest and RoomService already have onDelete: Cascade in schema
+    // First, delete all payments associated with the room/assignments
+    await tx.payment.deleteMany({
+      where: { roomId: roomId }
+    });
+
+    // Then delete room students (inactive ones) to avoid foreign key issues
     await tx.roomStudent.deleteMany({
       where: { roomId: roomId }
     });
