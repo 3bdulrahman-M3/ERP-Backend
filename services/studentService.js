@@ -327,12 +327,39 @@ const deleteStudent = async (id) => {
   const userId = student.userId;
 
   await prisma.$transaction(async (tx) => {
-    // Delete room assignments first as they don't cascade automatically in schema
+    // 1. Delete notifications for the user
+    if (userId) {
+      await tx.notification.deleteMany({
+        where: { userId: userId }
+      });
+    }
+
+    // 2. Delete messages tied to the student's conversation
+    const conversation = await tx.conversation.findUnique({
+      where: { studentId: studentId }
+    });
+    
+    if (conversation) {
+      await tx.message.deleteMany({
+        where: { conversationId: conversation.id }
+      });
+      // 3. Delete the conversation
+      await tx.conversation.delete({
+        where: { id: conversation.id }
+      });
+    }
+
+    // 4. Delete payments tied to the student
+    await tx.payment.deleteMany({
+      where: { studentId: studentId }
+    });
+
+    // 5. Delete room assignments
     await tx.roomStudent.deleteMany({
       where: { studentId: studentId }
     });
 
-    // Deleting the user will cascade to the student profile and other relations correctly
+    // 6. Deleting the user will cascade to the student profile
     if (userId) {
       await tx.user.delete({
         where: { id: userId }
