@@ -489,28 +489,39 @@ const completeStudentProfile = async (userId, studentData) => {
     throw new Error('This user is not a student');
   }
 
-  // Check if student already exists
-  const existingStudent = await prisma.student.findUnique({ 
-    where: { userId: uId } 
+  // Check if student profile already exists
+  const existingStudent = await prisma.student.findUnique({
+    where: { userId: uId }
   });
-  
-  if (existingStudent) {
-    throw new Error('Student profile already exists');
-  }
 
   const result = await prisma.$transaction(async (tx) => {
-    // Create student
-    let student = await tx.student.create({
-      data: {
-        name: user.name,
-        email: user.email,
-        collegeId: collegeId ? parseInt(collegeId) : null,
-        year: year ? parseInt(year) : null,
-        age: age ? parseInt(age) : null,
-        phoneNumber: phoneNumber || null,
-        userId: user.id
-      }
-    });
+    let student;
+    
+    if (existingStudent) {
+      // Update existing student
+      student = await tx.student.update({
+        where: { id: existingStudent.id },
+        data: {
+          collegeId: collegeId ? parseInt(collegeId) : null,
+          year: year ? parseInt(year) : null,
+          age: age ? parseInt(age) : null,
+          phoneNumber: phoneNumber || null
+        }
+      });
+    } else {
+      // Create student
+      student = await tx.student.create({
+        data: {
+          name: user.name,
+          email: user.email,
+          collegeId: collegeId ? parseInt(collegeId) : null,
+          year: year ? parseInt(year) : null,
+          age: age ? parseInt(age) : null,
+          phoneNumber: phoneNumber || null,
+          userId: user.id
+        }
+      });
+    }
 
     // Generate QR code
     const qrCode = await generateQRCode(student.id, user.name, user.email);

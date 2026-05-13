@@ -105,8 +105,8 @@ model Student {
   email         String         @unique
   collegeId     Int?
   year          Int?
-  age           Int
-  phoneNumber   String
+  age           Int?
+  phoneNumber   String?
   qrCode        String?
   userId        Int?           @unique
   profileImage  String?

@@ -240,8 +240,7 @@ const register = async (registerData) => {
         phoneNumber: phoneNumber || null,
         collegeId: college ? parseInt(college) : null,
         year: year ? parseInt(year) : null,
-        age: age ? parseInt(age) : null,
-        isActive: true
+        age: age ? parseInt(age) : null
       }
     });
 
